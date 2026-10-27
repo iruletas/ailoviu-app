@@ -23,6 +23,6 @@ jobs:
       - name: Subir JSON como artifact
         uses: actions/upload-artifact@v4
         with:
-          name: proyecto-completo-json
-          path: proyecto_completo.json
+          name: ailoviu-contexto-json
+          path: ailoviu_contexto.json
           retention-days: 30
