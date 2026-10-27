@@ -1,23 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Footer de marca "Acerca de Ailoviu". Reutilizable en Settings,
-/// Home, o donde se necesite cerrar una pantalla con la firma de la app.
-class AboutFooterCard extends StatefulWidget {
+import '../providers/app_info_providers.dart';
+
+/// Footer de marca "Acerca de Ailoviu". Reutilizable en Settings y About.
+///
+/// Lee la versión desde [appVersionProvider] para no hardcodearla.
+class AboutFooterCard extends ConsumerStatefulWidget {
   final VoidCallback? onTap;
-  final String version;
 
   const AboutFooterCard({
     super.key,
     this.onTap,
-    this.version = '0.1.0',
   });
 
   @override
-  State<AboutFooterCard> createState() => _AboutFooterCardState();
+  ConsumerState<AboutFooterCard> createState() => _AboutFooterCardState();
 }
 
-class _AboutFooterCardState extends State<AboutFooterCard> {
+class _AboutFooterCardState extends ConsumerState<AboutFooterCard> {
   bool _pressed = false;
 
   void _setPressed(bool value) {
@@ -34,6 +36,8 @@ class _AboutFooterCardState extends State<AboutFooterCard> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
+    final versionAsync = ref.watch(appVersionProvider);
+    final version = versionAsync.valueOrNull ?? '...';
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -91,7 +95,7 @@ class _AboutFooterCardState extends State<AboutFooterCard> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            'v${widget.version}',
+                            'v$version',
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: scheme.onSurfaceVariant,
                               fontWeight: FontWeight.w600,
