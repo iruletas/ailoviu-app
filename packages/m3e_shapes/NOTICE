@@ -1,0 +1,21 @@
+Este paquete (m3e_shapes) es un wrapper delgado sobre el paquete
+androidx_graphics_shapes 2.0.0, escrito por deminearchiver (MIT) y
+publicado en pub.dev.
+
+androidx_graphics_shapes es a su vez un port en Dart de la librería
+oficial de Google:
+
+  - androidx.graphics.shapes (Kotlin)
+  - androidx.compose.material3.MaterialShapes (Kotlin)
+
+Ambas publicadas bajo la Apache License 2.0:
+  https://www.apache.org/licenses/LICENSE-2.0
+
+El código original de Google está disponible en:
+  https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:compose/material3/material3/src/commonMain/kotlin/androidx/compose/material3/MaterialShapes.kt
+
+El port en Dart está disponible en:
+  https://github.com/deminearchiver/dart-flutter-packages/tree/main/packages/androidx_graphics_shapes
+
+Este paquete se distribuye bajo los mismos términos (MIT) que el
+upstream del que depende.
