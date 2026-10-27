@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04   # antes: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -87,17 +87,12 @@ jobs:
         run: |
           flutter create --platforms=android --org com.iruletas --project-name ailoviu .
 
-      - name: Forzar versión base 0.1.0 en pubspec.yaml
+      - name: Auto-versionar en pubspec.yaml
         run: |
-          sed -i -E "s/^version: .*/version: 0.1.0+1/" pubspec.yaml
-          echo "Versión base establecida a 0.1.0"
-
-      - name: Auto-incrementar versionCode en pubspec.yaml
-        run: |
-          NEW_VERSION_CODE=${{ github.run_number }}
-          echo "Nuevo versionCode: $NEW_VERSION_CODE"
-          sed -i -E "s/^version: ([0-9.]+)\+[0-9]+/version: \1+${NEW_VERSION_CODE}/" pubspec.yaml
-          echo "pubspec.yaml actualizado:"
+          VERSION="0.1.${{ github.run_number }}"
+          BUILD="${{ github.run_number }}"
+          sed -i -E "s/^version: .*/version: ${VERSION}+${BUILD}/" pubspec.yaml
+          echo "Versión aplicada: ${VERSION}+${BUILD}"
           grep "^version:" pubspec.yaml
 
       - name: Decodificar keystore de release
