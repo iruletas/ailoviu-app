@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/app_theme.dart';
 import 'providers/settings_providers.dart';
 import 'screens/main_shell.dart';
+import 'widgets/auth_gate.dart';
 
 class AiloviuApp extends ConsumerWidget {
   const AiloviuApp({super.key});
@@ -25,7 +26,7 @@ class AiloviuApp extends ConsumerWidget {
         amoled: settings.amoled,
       ),
       themeMode: settings.themeMode,
-      home: const MainShell(),
+      home: const AuthGate(child: MainShell()),
     );
   }
 }
