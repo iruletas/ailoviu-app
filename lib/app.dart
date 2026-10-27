@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'core/settings/settings_providers.dart';
-import 'core/theme/app_theme.dart';
-import 'main_shell.dart';
+import 'core/app_theme.dart';
+import 'providers/settings_providers.dart';
+import 'screens/main_shell.dart';
 
 class AiloviuApp extends ConsumerWidget {
   const AiloviuApp({super.key});
