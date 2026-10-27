@@ -29,7 +29,6 @@ jobs:
             RESPONSE=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$REPO/actions/artifacts?per_page=100&page=$PAGE")
-            # Busca cualquier artifact cuyo nombre contenga "release"
             IDS=$(echo "$RESPONSE" | jq -r '.artifacts[] | select(.name | contains("release")) | .id')
             if [ -z "$IDS" ]; then
               echo "Página $PAGE: sin artifacts coincidentes. Fin de la búsqueda."
@@ -90,6 +89,12 @@ jobs:
         run: |
           flutter create --platforms=android --org com.iruletas --project-name ailoviu .
 
+      - name: Forzar versión base 0.1.0 en pubspec.yaml
+        run: |
+          # Reemplaza cualquier versión existente por 0.1.0+1 (manteniendo el +1 temporal)
+          sed -i -E "s/^version: .*/version: 0.1.0+1/" pubspec.yaml
+          echo "Versión base establecida a 0.1.0"
+
       - name: Auto-incrementar versionCode en pubspec.yaml
         run: |
           NEW_VERSION_CODE=${{ github.run_number }}
@@ -131,12 +136,10 @@ jobs:
           with open(path, 'r') as f:
               content = f.read()
 
-          # 1. Añadir imports arriba del todo
           imports = "import java.util.Properties\nimport java.io.FileInputStream\n\n"
           if "import java.util.Properties" not in content:
               content = imports + content
 
-          # 2. Definir bloque signingConfigs
           signing_config = """
               signingConfigs {
                   create("release") {
@@ -154,16 +157,14 @@ jobs:
 
           """
           
-          # Insertar justo antes de buildTypes {
           if "signingConfigs {" not in content:
               content = content.replace("    buildTypes {", signing_config + "    buildTypes {")
 
-          # 3. Cambiar la firma de debug por la de release
           content = content.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
 
           with open(path, 'w') as f:
               f.write(content)
-          print("Archivo build.gradle.kts modificado con éxito usando la sintaxis de AGP 9.0.")
+          print("Archivo build.gradle.kts modificado con éxito.")
           PYEOF
 
       - name: Descargar dependencias
