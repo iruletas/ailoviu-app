@@ -37,11 +37,8 @@ enum RelationshipType {
   bool get allowsThirdMember => this == RelationshipType.polyamorous;
 }
 
-/// Estado inmutable de la relación.
 @immutable
 class AppRelationship {
-  /// Nombres de los miembros. Longitud 2 o 3.
-  /// Índice 0 = miembro A, 1 = miembro B, 2 = miembro C (si aplica).
   final List<String> partnerNames;
   final RelationshipType type;
   final DateTime? startDate;
@@ -64,14 +61,11 @@ class AppRelationship {
     );
   }
 
-  /// Número de miembros visibles según el tipo de relación.
   int get visibleCount => type.allowsThirdMember ? 3 : 2;
 
-  /// Nombres visibles (recortados a [visibleCount]).
   List<String> get visibleNames => partnerNames.take(visibleCount).toList();
 }
 
-// ── Notifier con persistencia ──────────────────────────────────────────────
 class RelationshipNotifier extends StateNotifier<AppRelationship> {
   RelationshipNotifier() : super(const AppRelationship()) {
     _load();
@@ -116,7 +110,6 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
 
   Future<void> setType(RelationshipType type) async {
     final updatedNames = List<String>.from(state.partnerNames);
-    // Garantiza al menos 3 entradas si el tipo habilita el tercero.
     if (type.allowsThirdMember && updatedNames.length < 3) {
       updatedNames.add('');
     }
