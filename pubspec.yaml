@@ -12,6 +12,8 @@ dependencies:
   cupertino_icons: 1.0.8
   shared_preferences: ^2.3.0
   flutter_riverpod: ^2.5.1
+  m3e_shapes:
+    path: packages/m3e_shapes
 
 dev_dependencies:
   flutter_test:
