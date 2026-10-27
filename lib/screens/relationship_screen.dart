@@ -1,11 +1,15 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_shapes/m3e_shapes.dart';
 
 import '../providers/relationship_providers.dart';
+import '../widgets/anniversary_card.dart';
+import '../widgets/danger_action_card.dart';
 import '../widgets/relationship_preview.dart';
+import '../widgets/settings_components.dart';
+import '../widgets/shape_selector_card.dart';
+import '../widgets/tonal_back_button.dart';
 
 class RelationshipScreen extends ConsumerStatefulWidget {
   const RelationshipScreen({super.key});
@@ -55,6 +59,7 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
 
   Future<void> _pickDate() async {
     final rel = ref.read(relationshipProvider);
+    final scheme = Theme.of(context).colorScheme;
     final picked = await showDatePicker(
       context: context,
       initialDate: rel.startDate ?? DateTime.now(),
@@ -62,7 +67,21 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
       lastDate: DateTime.now(),
       helpText: 'Fecha de inicio',
       cancelText: 'Cancelar',
-      confirmText: 'Aceptar',
+      confirmText: 'Elegir',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            datePickerTheme: DatePickerThemeData(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(36),
+              ),
+              headerBackgroundColor: scheme.primaryContainer,
+              headerForegroundColor: scheme.onPrimaryContainer,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       await ref.read(relationshipProvider.notifier).setStartDate(picked);
@@ -70,29 +89,12 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
   }
 
   Future<void> _confirmClear() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar datos de la relación'),
-        content: const Text(
+    final confirmed = await ConfirmDeleteDialog.show(
+      context,
+      title: 'Eliminar datos de la relación',
+      message:
           'Se eliminarán los nombres, el tipo de relación y la fecha de '
           'inicio. El tema y el color no se modifican.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-              foregroundColor: Theme.of(ctx).colorScheme.onError,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
     if (confirmed == true) {
       await ref.read(relationshipProvider.notifier).clear();
@@ -105,221 +107,250 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
   @override
   Widget build(BuildContext context) {
     final rel = ref.watch(relationshipProvider);
+    final notifier = ref.read(relationshipProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final visibleCount = rel.visibleCount;
-    final hasAnyData = rel.partnerNames.any((n) => n.trim().isNotEmpty) ||
-        rel.startDate != null;
+    final hasAnyData =
+        rel.partnerNames.any((n) => n.trim().isNotEmpty) ||
+            rel.startDate != null;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Datos de la relación')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const RelationshipPreview(),
-              const SizedBox(height: 24),
-              Text(
-                'Tipo de relación',
-                style: theme.textTheme.titleMedium,
+      backgroundColor: scheme.surface,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        slivers: [
+          SliverAppBar.large(
+            backgroundColor: scheme.surface,
+            surfaceTintColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            leading: Padding(
+              padding: const EdgeInsets.all(8),
+              child: TonalBackButton(
+                onPressed: () => Navigator.of(context).pop(),
               ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<RelationshipType>(
-                initialValue: rel.type,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
+            ),
+            title: Text(
+              'Datos de la relación',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+            expandedHeight: 180,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsetsDirectional.only(
+                start: 20,
+                bottom: 16,
+                end: 20,
+              ),
+              title: Text(
+                'Datos de la relación',
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
+                  color: scheme.onSurface,
                 ),
-                items: [
-                  for (final type in RelationshipType.values)
-                    DropdownMenuItem(
-                      value: type,
-                      child: Row(
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // ── Hero: vista previa en vivo ──────────────────────
+                const RelationshipPreview(),
+                const SizedBox(height: 24),
+
+                // ── Tipo de relación ────────────────────────────────
+                BentoCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const TonalMicroHeader(
+                        icon: Icons.favorite_outline,
+                        title: 'Tipo de relación',
+                        description:
+                            'Elige la etiqueta que mejor describa su vínculo.',
+                      ),
+                      const SizedBox(height: 20),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
                         children: [
-                          _RelationshipShape(type: type),
-                          const SizedBox(width: 12),
-                          Text(type.label),
+                          for (final type in RelationshipType.values)
+                            ShapeSelectorCard(
+                              shape: _shapeForType(type),
+                              label: type.label,
+                              selected: rel.type == type,
+                              onTap: () => notifier.setType(type),
+                            ),
                         ],
                       ),
-                    ),
-                ],
-                onChanged: (v) {
-                  if (v != null) {
-                    ref.read(relationshipProvider.notifier).setType(v);
-                  }
-                },
-              ),
-              const SizedBox(height: 24),
-              Text('Nombres', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              for (int i = 0; i < visibleCount; i++) ...[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: TextField(
-                    controller: _controllers[i],
-                    focusNode: _focusNodes[i],
-                    maxLength: 30,
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: i < visibleCount - 1
-                        ? TextInputAction.next
-                        : TextInputAction.done,
-                    inputFormatters: [
-                      LengthLimitingTextInputFormatter(30),
                     ],
-                    decoration: InputDecoration(
-                      labelText: 'Miembro ${String.fromCharCode(65 + i)}',
-                      border: const OutlineInputBorder(),
-                      counterText: '',
-                    ),
-                    onSubmitted: (v) {
-                      ref
-                          .read(relationshipProvider.notifier)
-                          .setNameAt(i, v);
-                    },
                   ),
                 ),
-              ],
-              const SizedBox(height: 12),
-              Text(
-                'Fecha de inicio',
-                style: theme.textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: theme.colorScheme.outlineVariant,
+                const SizedBox(height: 16),
+
+                // ── Nombres ─────────────────────────────────────────
+                BentoCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const TonalMicroHeader(
+                        icon: Icons.people_outline,
+                        title: 'Integrantes',
+                        description:
+                            'Sus nombres se guardan automáticamente.',
+                      ),
+                      const SizedBox(height: 20),
+                      for (int i = 0; i < visibleCount; i++) ...[
+                        AnimatedBuilder(
+                          animation: _focusNodes[i],
+                          builder: (context, _) => _MemberField(
+                            letter: String.fromCharCode(65 + i),
+                            controller: _controllers[i],
+                            focusNode: _focusNodes[i],
+                            isLast: i == visibleCount - 1,
+                            onSubmit: (v) => notifier.setNameAt(i, v),
+                          ),
+                        ),
+                        if (i < visibleCount - 1)
+                          const SizedBox(height: 12),
+                      ],
+                    ],
                   ),
                 ),
-                leading: const Icon(Icons.event_outlined),
-                title: Text(
-                  rel.startDate == null
-                      ? 'Sin configurar'
-                      : _formatDate(rel.startDate!),
+                const SizedBox(height: 16),
+
+                // ── Aniversario ─────────────────────────────────────
+                AnniversaryCard(
+                  startDate: rel.startDate,
+                  onTap: _pickDate,
                 ),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: _pickDate,
-              ),
-              const SizedBox(height: 24),
-              if (hasAnyData)
-                TextButton.icon(
-                  onPressed: _confirmClear,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Eliminar datos de la relación'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.error,
+
+                // ── Eliminar ────────────────────────────────────────
+                if (hasAnyData) ...[
+                  const SizedBox(height: 16),
+                  DangerActionCard(
+                    label: 'Restablecer datos de la relación',
+                    onTap: _confirmClear,
                   ),
-                ),
-              const SizedBox(height: 16),
-            ],
+                ],
+              ]),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  String _formatDate(DateTime d) {
-    final dd = d.day.toString().padLeft(2, '0');
-    final mm = d.month.toString().padLeft(2, '0');
-    return '$dd/$mm/${d.year}';
+  static M3EShape _shapeForType(RelationshipType type) {
+    switch (type) {
+      case RelationshipType.hetero:
+        return M3EShape.circle;
+      case RelationshipType.lesbian:
+        return M3EShape.triangle;
+      case RelationshipType.gay:
+        return M3EShape.square;
+      case RelationshipType.polyamorous:
+        return M3EShape.cookie6Sided;
+      case RelationshipType.open:
+        return M3EShape.diamond;
+      case RelationshipType.other:
+        return M3EShape.arch;
+    }
   }
 }
 
-class _RelationshipShape extends StatelessWidget {
-  final RelationshipType type;
-  const _RelationshipShape({required this.type});
+// ── Campo de texto con avatar ────────────────────────────────────────────
+// Privado: el prefijo A/B/C es demasiado específico de esta pantalla
+// para promoverlo a widgets/. Si mañana se reusa, se extrae.
+class _MemberField extends StatelessWidget {
+  final String letter;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool isLast;
+  final ValueChanged<String> onSubmit;
+
+  const _MemberField({
+    required this.letter,
+    required this.controller,
+    required this.focusNode,
+    required this.isLast,
+    required this.onSubmit,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
-    const size = 20.0;
+    final scheme = Theme.of(context).colorScheme;
+    final focused = focusNode.hasFocus;
 
-    switch (type) {
-      case RelationshipType.hetero:
-        return Icon(Icons.circle_outlined, size: size, color: color);
-      case RelationshipType.lesbian:
-        return SizedBox(
-          width: size,
-          height: size,
-          child: CustomPaint(painter: _TrianglePainter(color)),
-        );
-      case RelationshipType.gay:
-        return Icon(Icons.square_outlined, size: size, color: color);
-      case RelationshipType.polyamorous:
-        return SizedBox(
-          width: size,
-          height: size,
-          child: CustomPaint(painter: _HexagonPainter(color)),
-        );
-      case RelationshipType.open:
-        return Icon(Icons.diamond_outlined, size: size, color: color);
-      case RelationshipType.other:
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: color, width: 3),
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      maxLength: 30,
+      textCapitalization: TextCapitalization.words,
+      textInputAction:
+          isLast ? TextInputAction.done : TextInputAction.next,
+      inputFormatters: [LengthLimitingTextInputFormatter(30)],
+      onSubmitted: onSubmit,
+      decoration: InputDecoration(
+        counterText: '',
+        filled: true,
+        fillColor: focused
+            ? scheme.primaryContainer.withValues(alpha: 0.35)
+            : scheme.surfaceContainerHigh,
+        hintText: 'Nombre del miembro $letter',
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: scheme.primary, width: 1.5),
+        ),
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(left: 8, right: 8),
+          child: AnimatedScale(
+            scale: focused ? 1.1 : 1.0,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutBack,
+            child: Center(
+              widthFactor: 1,
+              child: Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  letter,
+                  style: TextStyle(
+                    color: scheme.onSecondaryContainer,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
           ),
-        );
-    }
+        ),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 56,
+          minHeight: 56,
+        ),
+      ),
+    );
   }
-}
-
-class _TrianglePainter extends CustomPainter {
-  final Color color;
-  _TrianglePainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeJoin = StrokeJoin.round;
-    final path = Path()
-      ..moveTo(size.width / 2, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _TrianglePainter old) => old.color != color;
-}
-
-class _HexagonPainter extends CustomPainter {
-  final Color color;
-  _HexagonPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeJoin = StrokeJoin.round;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final r = size.width / 2;
-    final path = Path();
-    for (int i = 0; i < 6; i++) {
-      final angle = (math.pi / 3) * i - math.pi / 6;
-      final x = cx + r * math.cos(angle);
-      final y = cy + r * math.sin(angle);
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _HexagonPainter old) => old.color != color;
 }
