@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../providers/settings_providers.dart';
+
 /// Contenedor tonal con esquinas superredondeadas para agrupar ajustes.
 class SettingsGroupCard extends StatelessWidget {
   final Widget child;
@@ -239,6 +241,59 @@ class PillStatus extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
       ),
+    );
+  }
+}
+
+/// Fila de badges que resume el estado del tema actual:
+/// chip de modo (Claro/Oscuro/Sistema), chip AMOLED (si activo),
+/// y punto del color semilla activo.
+///
+/// Reutilizable en Settings, Appearance y cualquier pantalla que
+/// necesite mostrar el estado del tema de forma compacta.
+class ThemeBadges extends StatelessWidget {
+  final AppSettings settings;
+  const ThemeBadges({super.key, required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final modeLabel = switch (settings.themeMode) {
+      ThemeMode.light => 'Claro',
+      ThemeMode.dark => 'Oscuro',
+      ThemeMode.system => 'Sistema',
+    };
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        MiniChip(
+          label: modeLabel,
+          background: scheme.secondaryContainer,
+          foreground: scheme.onSecondaryContainer,
+        ),
+        if (settings.amoled)
+          MiniChip(
+            label: 'AMOLED',
+            background: scheme.tertiaryContainer,
+            foreground: scheme.onTertiaryContainer,
+            bold: true,
+          ),
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: settings.seedColor,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: scheme.outlineVariant,
+              width: 1.5,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
