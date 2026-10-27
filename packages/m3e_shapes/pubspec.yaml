@@ -1,0 +1,13 @@
+name: m3e_shapes
+description: Wrapper delgado sobre androidx_graphics_shapes 2.0.0 — expone las 35 formas de Material 3 Expressive con path, clip y morph.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  androidx_graphics_shapes: ^2.0.0
