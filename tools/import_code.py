@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Exporta el contenido del repositorio scrobbot-app a un JSON único.
+Exporta el contenido del repositorio ailoviu-app a un JSON único.
 Pensado para dar contexto completo a chats nuevos (IA) sin explicaciones adicionales.
 
 - Recorre todo el repo respetando .gitignore básico.
@@ -31,6 +31,7 @@ IGNORAR_RUTAS = {
 IGNORAR_ARCHIVOS = {
     ".DS_Store",
     "Thumbs.db",
+    "ailoviu_contexto.json",
     "proyecto_completo.json",
 }
 
@@ -114,13 +115,11 @@ def construir_mapa_jerarquia(raiz: Path):
 
 def agrupar_por_origen(ruta_relativa: str) -> str:
     """
-    Agrupa archivos por origen: app, bot, tools, config, otros.
+    Agrupa archivos por origen: app, tools, config, otros.
     Se usa para ordenar la salida y que sea legible.
     """
     if ruta_relativa.startswith("lib/") or ruta_relativa.startswith("android/"):
         return "app"
-    if ruta_relativa.startswith("bot/"):
-        return "bot"
     if ruta_relativa.startswith("tools/"):
         return "tools"
     if ruta_relativa.startswith(".github/"):
@@ -130,14 +129,13 @@ def agrupar_por_origen(ruta_relativa: str) -> str:
     return "otros"
 
 
-def exportar_repositorio(ruta_salida: str = "proyecto_completo.json"):
+def exportar_repositorio(ruta_salida: str = "ailoviu_contexto.json"):
     raiz = Path(".")
 
     proyecto_dict = {
         "_ESTRUCTURA_DEL_REPOSITORIO": construir_mapa_jerarquia(raiz),
         "_RESUMEN_POR_ORIGEN": {
             "app": [],
-            "bot": [],
             "tools": [],
             "config_github": [],
             "config_raiz": [],
