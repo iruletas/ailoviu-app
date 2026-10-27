@@ -32,7 +32,7 @@ class AppearanceScreen extends ConsumerWidget {
             segments: const [
               ButtonSegment(
                 value: ThemeMode.system,
-                icon: Icon(Icons.brightness_auto_outlined),
+                icon: Icon(Icons.phone_android_outlined),
                 label: Text('Sistema'),
               ),
               ButtonSegment(
