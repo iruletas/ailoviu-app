@@ -6,8 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../settings/settings_providers.dart';
 import 'relationship_providers.dart';
 
-/// Header reutilizable: avatares, nombres, tipo, fecha y días juntos.
-/// Lo usa RelationshipScreen hoy y HomeScreen mañana.
 class RelationshipPreview extends ConsumerWidget {
   const RelationshipPreview({super.key});
 
