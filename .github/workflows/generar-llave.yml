@@ -1,0 +1,19 @@
+name: Generar Llave
+on: workflow_dispatch
+
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generar keystore
+        run: |
+          keytool -genkey -v -keystore app-release-key.jks \
+          -keyalg RSA -keysize 2048 -validity 10000 \
+          -alias ailoviu -storepass ailoviu123 -keypass ailoviu123 \
+          -dname "CN=Ailoviu, OU=App, O=Iruletas, L=MX, S=MX, C=MX"
+      
+      - name: Subir keystore como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: keystore
+          path: app-release-key.jks
