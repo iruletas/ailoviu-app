@@ -95,7 +95,7 @@ helpers puros que no encajan en ninguna otra capa.
 ## 4. Regla de promoción temprana de widgets
 
 **Criterio:** si un widget privado (`_Xxx`) tiene **uso probable en
-otra pantalla en el corto plazo**, se promueve a `widgets/` **en el
+otra pantalla**, se promueve a `widgets/` **en el
 mismo commit** donde se crea. No se espera al segundo uso real.
 
 **Por qué:** un widget privado duplicado en dos pantallas es peor que
@@ -106,7 +106,7 @@ el error más caro de refactorizar después.
 - Solo tiene sentido en esa pantalla.
 - Está fuertemente acoplado a un dominio específico (ej.
   `_MemberField` con prefijo A/B/C).
-- No hay un segundo uso plausible en los próximos 2-3 commits.
+- No hay un segundo uso plausible.
 
 **Nomenclatura de archivos en `widgets/`:**
 - Un widget por archivo: `nombre_widget.dart`.
