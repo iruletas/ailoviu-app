@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/prefs_provider.dart';
+
 // ── Claves (prefijo settings.) ────────────────────────────────────────────
 const _kThemeMode = 'settings.themeMode';
 const _kSeedColor = 'settings.seedColor';
@@ -33,12 +35,14 @@ class AppSettings {
 }
 
 class SettingsNotifier extends StateNotifier<AppSettings> {
-  SettingsNotifier() : super(const AppSettings()) {
+  SettingsNotifier(this._prefsFuture) : super(const AppSettings()) {
     _load();
   }
 
+  final Future<SharedPreferences> _prefsFuture;
+
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
 
     final modeStr = prefs.getString(_kThemeMode);
     final seedInt = prefs.getInt(_kSeedColor);
@@ -75,24 +79,24 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> setThemeMode(ThemeMode mode) async {
     state = state.copyWith(themeMode: mode);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
     await prefs.setString(_kThemeMode, _serializeThemeMode(mode));
   }
 
   Future<void> setSeedColor(Color color) async {
     state = state.copyWith(seedColor: color);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
     await prefs.setInt(_kSeedColor, color.toARGB32());
   }
 
   Future<void> setAmoled(bool value) async {
     state = state.copyWith(amoled: value);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
     await prefs.setBool(_kAmoled, value);
   }
 }
 
 final settingsProvider =
     StateNotifierProvider<SettingsNotifier, AppSettings>(
-  (ref) => SettingsNotifier(),
+  (ref) => SettingsNotifier(ref.read(prefsProvider.future)),
 );
