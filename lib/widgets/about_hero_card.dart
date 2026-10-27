@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_shapes/m3e_shapes.dart';
 
 import '../providers/app_info_providers.dart';
 import 'settings_components.dart';
 import 'shape_selector_card.dart';
+
+class AboutHeroCard extends ConsumerStatefulWidget {
+  const AboutHeroCard({super.key});
 
 /// Tarjeta hero de "Acerca de Ailoviu".
 ///
