@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/relationship_providers.dart'';
-import '../providers/settings_providers.dart'';
-import 'about/about_screen.dart';
-import 'appearance/appearance_screen.dart';
-import 'relationship/relationship_screen.dart';
+import '../providers/relationship_providers.dart';
+import '../providers/settings_providers.dart';
+import 'about_screen.dart';
+import 'appearance_screen.dart';
+import 'relationship_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
