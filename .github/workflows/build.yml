@@ -121,41 +121,22 @@ jobs:
           EOF
           echo "key.properties creado."
 
-      - name: Configurar Gradle (eliminar y recrear)
+      - name: Configurar firma en Gradle (inyección quirúrgica)
         run: |
-          rm -f android/app/build.gradle.kts
-          cat > android/app/build.gradle.kts <<'EOF'
-          import java.util.Properties
-          import java.io.FileInputStream
+          python3 - <<'PYEOF'
+          import re
+          
+          path = 'android/app/build.gradle.kts'
+          with open(path, 'r') as f:
+              content = f.read()
 
-          plugins {
-              id("com.android.application")
-              id("kotlin-android")
-              id("dev.flutter.flutter-gradle-plugin")
-          }
+          # 1. Añadir imports arriba del todo
+          imports = "import java.util.Properties\nimport java.io.FileInputStream\n\n"
+          if "import java.util.Properties" not in content:
+              content = imports + content
 
-          android {
-              namespace = "com.iruletas.ailoviu"
-              compileSdk = flutter.compileSdkVersion
-              ndkVersion = flutter.ndkVersion
-
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = JavaVersion.VERSION_17.toString()
-              }
-
-              defaultConfig {
-                  applicationId = "com.iruletas.ailoviu"
-                  minSdk = flutter.minSdkVersion
-                  targetSdk = flutter.targetSdkVersion
-                  versionCode = flutter.versionCode
-                  versionName = flutter.versionName
-              }
-
+          # 2. Definir bloque signingConfigs
+          signing_config = """
               signingConfigs {
                   create("release") {
                       val keystoreProperties = Properties()
@@ -170,21 +151,19 @@ jobs:
                   }
               }
 
-              buildTypes {
-                  release {
-                      signingConfig = signingConfigs.getByName("release")
-                  }
-              }
-          }
-
-          flutter {
-              source = "../.."
-          }
-          EOF
+          """
           
-          echo "=== CONTENIDO DEL ARCHIVO ==="
-          cat android/app/build.gradle.kts
-          echo "=== FIN DEL ARCHIVO ==="
+          # Insertar justo antes de buildTypes {
+          if "signingConfigs {" not in content:
+              content = content.replace("    buildTypes {", signing_config + "    buildTypes {")
+
+          # 3. Cambiar la firma de debug por la de release
+          content = content.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
+
+          with open(path, 'w') as f:
+              f.write(content)
+          print("Archivo build.gradle.kts modificado con éxito usando la sintaxis de AGP 9.0.")
+          PYEOF
 
       - name: Descargar dependencias
         run: flutter pub get
