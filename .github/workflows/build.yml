@@ -50,7 +50,6 @@ jobs:
         run: |
           echo "Espacio ANTES de limpiar:"
           df -h /
-
           sudo rm -rf /usr/local/.ghcup || true
           sudo rm -rf /usr/local/share/powershell || true
           sudo rm -rf /usr/local/julia1.13.1 || true
@@ -60,7 +59,6 @@ jobs:
           sudo rm -rf /home/runner/.rustup || true
           sudo rm -rf /home/runner/.dotnet || true
           sudo rm -rf /home/linuxbrew || true
-
           echo "Espacio DESPUÉS de limpiar:"
           df -h /
 
@@ -124,17 +122,46 @@ jobs:
           echo "key.properties creado."
           grep -v "Password" android/key.properties
 
-      - name: Configurar firma en Gradle
+      - name: Sobrescribir build.gradle.kts con configuración de firma
         run: |
-          cat >> android/app/build.gradle.kts <<EOF
+          cat > android/app/build.gradle.kts <<'EOF'
+          import java.util.Properties
+          import java.io.FileInputStream
+
+          plugins {
+              id("com.android.application")
+              id("kotlin-android")
+              id("dev.flutter.flutter-gradle-plugin")
+          }
 
           android {
+              namespace = "com.iruletas.ailoviu"
+              compileSdk = flutter.compileSdkVersion
+              ndkVersion = flutter.ndkVersion
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = JavaVersion.VERSION_17.toString()
+              }
+
+              defaultConfig {
+                  applicationId = "com.iruletas.ailoviu"
+                  minSdk = flutter.minSdkVersion
+                  targetSdk = flutter.targetSdkVersion
+                  versionCode = flutter.versionCode
+                  versionName = flutter.versionName
+              }
+
               signingConfigs {
                   create("release") {
-                      val keystoreProperties = java.util.Properties()
+                      val keystoreProperties = Properties()
                       val keystorePropertiesFile = rootProject.file("key.properties")
                       if (keystorePropertiesFile.exists()) {
-                          keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+                          keystoreProperties.load(FileInputStream(keystorePropertiesFile))
                       }
                       keyAlias = keystoreProperties["keyAlias"] as String?
                       keyPassword = keystoreProperties["keyPassword"] as String?
@@ -142,11 +169,16 @@ jobs:
                       storePassword = keystoreProperties["storePassword"] as String?
                   }
               }
+
               buildTypes {
                   release {
                       signingConfig = signingConfigs.getByName("release")
                   }
               }
+          }
+
+          flutter {
+              source = "../.."
           }
           EOF
 
