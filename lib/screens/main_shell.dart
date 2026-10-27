@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'features/home/home_screen.dart';
-import 'features/calendar/calendar_screen.dart';
-import 'features/messages/messages_screen.dart';
-import 'features/play/play_screen.dart';
-import 'features/settings/settings_screen.dart';
+import 'home_screen.dart';
+import 'calendar_screen.dart';
+import 'connection_screen.dart';
+import 'play_screen.dart';
+import 'settings_screen.dart';
 
 // ── Layout ────────────────────────────────────────────────────────────────
 const double _kBarMaxWidth = 480.0;
@@ -101,11 +101,10 @@ class _MainShellState extends State<MainShell> {
     const pages = <Widget>[
       HomeScreen(),
       CalendarScreen(),
-      MessagesScreen(),
+      ConnectionScreen(),
       PlayScreen(),
     ];
 
-    // viewPaddingOf no depende del teclado (a diferencia de .padding).
     final safeTop = MediaQuery.viewPaddingOf(context).top;
     final navbarTop = safeTop + _kBarTopMargin;
 
@@ -115,7 +114,6 @@ class _MainShellState extends State<MainShell> {
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // Contenido con padding superior para no quedar bajo la navbar.
           Positioned.fill(
             child: Padding(
               padding: EdgeInsets.only(
@@ -133,8 +131,6 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
           ),
-
-          // Navbar flotante arriba.
           Positioned(
             left: 0,
             right: 0,
