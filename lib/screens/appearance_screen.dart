@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/settings_providers.dart'';
-import '../core/seed_palette.dart'';
+import '../core/seed_palette.dart';
+import '../providers/settings_providers.dart';
 
 class AppearanceScreen extends ConsumerWidget {
   const AppearanceScreen({super.key});
@@ -12,7 +12,6 @@ class AppearanceScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
-    // Determina si AMOLED es aplicable (brillo efectivo oscuro).
     final platformBrightness = MediaQuery.platformBrightnessOf(context);
     final isEffectivelyDark = switch (settings.themeMode) {
       ThemeMode.dark => true,
@@ -25,8 +24,10 @@ class AppearanceScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('Modo de brillo',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Modo de brillo',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 12),
           SegmentedButton<ThemeMode>(
             segments: const [
@@ -51,9 +52,7 @@ class AppearanceScreen extends ConsumerWidget {
               notifier.setThemeMode(set.first);
             },
           ),
-
           const SizedBox(height: 24),
-
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('AMOLED'),
@@ -67,11 +66,11 @@ class AppearanceScreen extends ConsumerWidget {
                 ? (v) => notifier.setAmoled(v)
                 : null,
           ),
-
           const Divider(height: 48),
-
-          Text('Color semilla',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Color semilla',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 12,
