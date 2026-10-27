@@ -13,14 +13,13 @@ import 'settings_screen.dart';
 const double _kBarMaxWidth = 480.0;
 const double _kBarHeight = 64.0;
 const double _kBarHorizontalMargin = 16.0;
-const double _kBarTopMargin = 8.0;
+const double _kBarBottomMargin = 12.0;
 const double _kBarBorderRadius = 32.0;
 const double _kButtonBorderRadius = 28.0;
 const double _kIconSize = 24.0;
 
-const double _kSettingsPillWidth = 56.0;
-const double _kSettingsPillHeight = 44.0;
-const double _kSettingsPillGap = 10.0;
+const double _kSettingsPillSize = 48.0;
+const double _kSettingsPillMargin = 16.0;
 
 // ── Animación ─────────────────────────────────────────────────────────────
 const Duration _kTabTransitionBase = Duration(milliseconds: 250);
@@ -30,7 +29,6 @@ const Duration _kIconScaleDuration = Duration(milliseconds: 260);
 const Duration _kPressScaleDuration = Duration(milliseconds: 120);
 
 /// Cambia a true para ver el micro-indicador pulsante del botón de ajustes.
-/// Cuando exista un provider de "novedades" o "cuenta", se conecta aquí.
 const bool kShowSettingsBadge = false;
 
 class _NavDestination {
@@ -115,20 +113,22 @@ class _MainShellState extends State<MainShell> {
       PlayScreen(),
     ];
 
-    final safeTop = MediaQuery.viewPaddingOf(context).top;
-    final navbarTop = safeTop + _kBarTopMargin;
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    final safeTop = viewPadding.top;
+    final safeBottom = viewPadding.bottom;
+
+    // Espacio reservado abajo para que el contenido no quede tapado por la navbar
+    final bottomReserved = safeBottom + _kBarHeight + _kBarBottomMargin * 2;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
+          // ── Contenido de las pestañas ────────────────────────────────
           Positioned.fill(
             child: Padding(
-              padding: EdgeInsets.only(
-                top: navbarTop + _kBarHeight + _kBarTopMargin,
-              ),
+              padding: EdgeInsets.only(bottom: bottomReserved),
               child: PageView(
                 controller: _pageController,
                 physics: const ClampingScrollPhysics(),
@@ -141,36 +141,35 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
           ),
+
+          // ── Botón de Ajustes (arriba derecha) ────────────────────────
+          Positioned(
+            top: safeTop + _kSettingsPillMargin,
+            right: _kSettingsPillMargin,
+            child: _SettingsCapsule(
+              onPressed: _openSettings,
+              showBadge: kShowSettingsBadge,
+            ),
+          ),
+
+          // ── Navbar flotante centrada abajo ───────────────────────────
           Positioned(
             left: 0,
             right: 0,
-            top: navbarTop,
+            bottom: safeBottom + _kBarBottomMargin,
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: _kBarHorizontalMargin,
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Center(
-                      heightFactor: 1,
-                      child: ConstrainedBox(
-                        constraints:
-                            const BoxConstraints(maxWidth: _kBarMaxWidth),
-                        child: _ExpressiveNavBar(
-                          currentIndex: _currentIndex,
-                          onSelect: _onTabSelected,
-                        ),
-                      ),
-                    ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(maxWidth: _kBarMaxWidth),
+                  child: _ExpressiveNavBar(
+                    currentIndex: _currentIndex,
+                    onSelect: _onTabSelected,
                   ),
-                  const SizedBox(width: _kSettingsPillGap),
-                  _SettingsCapsule(
-                    onPressed: _openSettings,
-                    showBadge: kShowSettingsBadge,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -190,8 +189,8 @@ class _ExpressiveNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Material(
-      elevation: 6,
-      shadowColor: Colors.black.withValues(alpha: 0.4),
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.45),
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(_kBarBorderRadius),
       child: ClipRRect(
@@ -425,8 +424,8 @@ class _SettingsCapsuleState extends State<_SettingsCapsule>
               ),
               color: colorScheme.tertiaryContainer,
               child: SizedBox(
-                width: _kSettingsPillWidth,
-                height: _kSettingsPillHeight,
+                width: _kSettingsPillSize,
+                height: _kSettingsPillSize,
                 child: Center(
                   child: Icon(
                     Icons.settings_rounded,
@@ -438,10 +437,10 @@ class _SettingsCapsuleState extends State<_SettingsCapsule>
               ),
             ),
             if (widget.showBadge)
-              Positioned(
+              const Positioned(
                 top: -2,
                 right: -2,
-                child: _PulsingBadge(controller: _pulseController),
+                child: _PulsingBadge(),
               ),
           ],
         ),
@@ -450,17 +449,40 @@ class _SettingsCapsuleState extends State<_SettingsCapsule>
   }
 }
 
-class _PulsingBadge extends StatelessWidget {
-  final AnimationController controller;
-  const _PulsingBadge({required this.controller});
+// ── Badge pulsante autónomo (maneja su propio AnimationController) ───────
+class _PulsingBadge extends StatefulWidget {
+  const _PulsingBadge();
+
+  @override
+  State<_PulsingBadge> createState() => _PulsingBadgeState();
+}
+
+class _PulsingBadgeState extends State<_PulsingBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return AnimatedBuilder(
-      animation: controller,
+      animation: _controller,
       builder: (context, _) {
-        final t = controller.value;
+        final t = _controller.value;
         final glow = 4 + (t * 6);
         final opacity = 0.4 + (t * 0.6);
         return Container(
