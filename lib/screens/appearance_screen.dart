@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/seed_palette.dart';
 import '../providers/settings_providers.dart';
+import '../widgets/settings_components.dart';
 
 class AppearanceScreen extends ConsumerWidget {
   const AppearanceScreen({super.key});
@@ -11,6 +13,8 @@ class AppearanceScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
 
     final platformBrightness = MediaQuery.platformBrightnessOf(context);
     final isEffectivelyDark = switch (settings.themeMode) {
@@ -20,69 +24,140 @@ class AppearanceScreen extends ConsumerWidget {
     };
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tema y color')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Modo de brillo',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          SegmentedButton<ThemeMode>(
-            segments: const [
-              ButtonSegment(
-                value: ThemeMode.system,
-                icon: Icon(Icons.phone_android_outlined),
-                label: Text('Sistema'),
+      backgroundColor: scheme.surface,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        slivers: [
+          SliverAppBar.large(
+            backgroundColor: scheme.surface,
+            surfaceTintColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            leading: Padding(
+              padding: const EdgeInsets.all(8),
+              child: _TonalBackButton(
+                onPressed: () => Navigator.of(context).pop(),
               ),
-              ButtonSegment(
-                value: ThemeMode.light,
-                icon: Icon(Icons.light_mode_outlined),
-                label: Text('Claro'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.dark,
-                icon: Icon(Icons.dark_mode_outlined),
-                label: Text('Oscuro'),
-              ),
-            ],
-            selected: {settings.themeMode},
-            onSelectionChanged: (set) {
-              notifier.setThemeMode(set.first);
-            },
-          ),
-          const SizedBox(height: 24),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('AMOLED'),
-            subtitle: Text(
-              isEffectivelyDark
-                  ? 'Negros puros para ahorrar batería en pantallas OLED'
-                  : 'Solo disponible en modo oscuro',
             ),
-            value: settings.amoled && isEffectivelyDark,
-            onChanged: isEffectivelyDark
-                ? (v) => notifier.setAmoled(v)
-                : null,
-          ),
-          const Divider(height: 48),
-          Text(
-            'Color semilla',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final color in kSeedPalette)
-                _SeedChip(
-                  color: color,
-                  selected: color.toARGB32() == settings.seedColor.toARGB32(),
-                  onTap: () => notifier.setSeedColor(color),
+            title: Text(
+              'Tema y color',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+            expandedHeight: 180,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsetsDirectional.only(
+                start: 20,
+                bottom: 16,
+                end: 20,
+              ),
+              title: Text(
+                'Tema y color',
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
+                  color: scheme.onSurface,
                 ),
-            ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                BentoCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const TonalMicroHeader(
+                        icon: Icons.brightness_6_outlined,
+                        title: 'Modo de brillo',
+                        description:
+                            'Elige cómo se adapta la app a la luz de tu entorno.',
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: BrightnessCard(
+                              icon: Icons.phone_android_outlined,
+                              label: 'Sistema',
+                              selected:
+                                  settings.themeMode == ThemeMode.system,
+                              onTap: () => notifier
+                                  .setThemeMode(ThemeMode.system),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: BrightnessCard(
+                              icon: Icons.light_mode_outlined,
+                              label: 'Claro',
+                              selected:
+                                  settings.themeMode == ThemeMode.light,
+                              onTap: () =>
+                                  notifier.setThemeMode(ThemeMode.light),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: BrightnessCard(
+                              icon: Icons.dark_mode_outlined,
+                              label: 'Oscuro',
+                              selected:
+                                  settings.themeMode == ThemeMode.dark,
+                              onTap: () =>
+                                  notifier.setThemeMode(ThemeMode.dark),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _AmoledCard(
+                  enabled: isEffectivelyDark,
+                  value: settings.amoled && isEffectivelyDark,
+                  onChanged: (v) {
+                    if (isEffectivelyDark) {
+                      notifier.setAmoled(v);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                BentoCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const TonalMicroHeader(
+                        icon: Icons.palette_outlined,
+                        title: 'Color semilla',
+                        description:
+                            'Define el acento de toda la app a partir de un color.',
+                      ),
+                      const SizedBox(height: 20),
+                      Wrap(
+                        spacing: 14,
+                        runSpacing: 14,
+                        children: [
+                          for (final color in kSeedPalette)
+                            SeedColorChip(
+                              color: color,
+                              selected: color.toARGB32() ==
+                                  settings.seedColor.toARGB32(),
+                              onTap: () => notifier.setSeedColor(color),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ]),
+            ),
           ),
         ],
       ),
@@ -90,42 +165,132 @@ class AppearanceScreen extends ConsumerWidget {
   }
 }
 
-class _SeedChip extends StatelessWidget {
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _SeedChip({
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
+class _TonalBackButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _TonalBackButton({required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: selected
-              ? Border.all(color: scheme.onSurface, width: 3)
-              : Border.all(color: scheme.outlineVariant, width: 1),
+    return IconButton.filledTonal(
+      onPressed: onPressed,
+      icon: const Icon(Icons.arrow_back_rounded),
+      style: IconButton.styleFrom(
+        backgroundColor: scheme.surfaceContainerHigh,
+        foregroundColor: scheme.onSurface,
+      ),
+      tooltip: 'Volver',
+    );
+  }
+}
+
+class _AmoledCard extends StatefulWidget {
+  final bool enabled;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _AmoledCard({
+    required this.enabled,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  State<_AmoledCard> createState() => _AmoledCardState();
+}
+
+class _AmoledCardState extends State<_AmoledCard> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  void _handleTap() {
+    if (!widget.enabled) return;
+    HapticFeedback.lightImpact();
+    widget.onChanged(!widget.value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    return AnimatedOpacity(
+      opacity: widget.enabled ? 1.0 : 0.5,
+      duration: const Duration(milliseconds: 250),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: widget.enabled ? (_) => _setPressed(true) : null,
+        onTapUp: widget.enabled ? (_) => _setPressed(false) : null,
+        onTapCancel: widget.enabled ? () => _setPressed(false) : null,
+        onTap: widget.enabled ? _handleTap : null,
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1.0,
+          duration: const Duration(milliseconds: 140),
+          curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
+          child: BentoCard(
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.dark_mode_rounded,
+                    size: 20,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'AMOLED',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (!widget.enabled)
+                        MiniChip(
+                          label: 'Solo en modo oscuro',
+                          background: scheme.surfaceContainerHighest,
+                          foreground: scheme.onSurfaceVariant,
+                        )
+                      else
+                        Text(
+                          'Negros puros para ahorrar batería en pantallas OLED',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Switch(
+                  value: widget.value,
+                  onChanged:
+                      widget.enabled ? (v) => widget.onChanged(v) : null,
+                  thumbIcon: WidgetStateProperty.resolveWith(
+                    (states) => states.contains(WidgetState.selected)
+                        ? const Icon(Icons.check)
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        child: selected
-            ? Icon(
-                Icons.check,
-                color: ThemeData.estimateBrightnessForColor(color) ==
-                        Brightness.dark
-                    ? Colors.white
-                    : Colors.black,
-              )
-            : null,
       ),
     );
   }
