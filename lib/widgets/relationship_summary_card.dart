@@ -37,9 +37,18 @@ class RelationshipSummaryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Si el caller no pasa relación, leemos del provider.
-    // El `??` garantiza que `rel` es no-null.
-    final rel = relationship ?? ref.watch(relationshipProvider);
+    // Capa 1: tipo explícito en dos pasos.
+    // Capa 2: cast `as AppRelationship` como cinturón de seguridad.
+    // Capa 3: assert en debug para detectar un provider roto en tests.
+    final AppRelationship fromProvider = ref.watch(relationshipProvider);
+    assert(
+      fromProvider is AppRelationship,
+      'relationshipProvider debe devolver AppRelationship no-null. '
+      'Revisa lib/providers/relationship_providers.dart',
+    );
+
+    final AppRelationship rel =
+        (relationship ?? fromProvider) as AppRelationship;
 
     if (variant == RelationshipCardVariant.hero) {
       return _HeroCard(
