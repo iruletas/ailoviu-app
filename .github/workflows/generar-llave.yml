@@ -1,4 +1,4 @@
-name: Generar Llave
+name: Generar Llave y Base64
 on: workflow_dispatch
 
 jobs:
@@ -12,8 +12,9 @@ jobs:
           -alias ailoviu -storepass ailoviu123 -keypass ailoviu123 \
           -dname "CN=Ailoviu, OU=App, O=Iruletas, L=MX, S=MX, C=MX"
       
-      - name: Subir keystore como artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: keystore
-          path: app-release-key.jks
+      - name: Convertir a Base64 e imprimir en el log
+        run: |
+          echo "=== COPIA EL TEXTO DE ABAJO ==="
+          base64 -w 0 app-release-key.jks
+          echo ""
+          echo "=== FIN DEL TEXTO ==="
