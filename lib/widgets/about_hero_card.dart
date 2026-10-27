@@ -7,9 +7,6 @@ import '../providers/app_info_providers.dart';
 import 'settings_components.dart';
 import 'shape_selector_card.dart';
 
-class AboutHeroCard extends ConsumerStatefulWidget {
-  const AboutHeroCard({super.key});
-
 /// Tarjeta hero de "Acerca de Ailoviu".
 ///
 /// Corazón con heartbeat animado, nombre grande, chip de versión
