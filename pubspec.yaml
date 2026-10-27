@@ -14,6 +14,7 @@ dependencies:
   flutter_riverpod: ^2.5.1
   package_info_plus: ^8.0.0
   local_auth: ^2.3.0
+  crypto: ^3.0.0
   m3e_shapes:
     path: packages/m3e_shapes
 
