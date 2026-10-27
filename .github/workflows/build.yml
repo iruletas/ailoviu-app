@@ -120,44 +120,51 @@ jobs:
           echo "key.properties creado."
 
       - name: Configurar firma en Gradle (inyección quirúrgica)
-        run: |
-          python3 - <<'PYEOF'
-          import re
-          
-          path = 'android/app/build.gradle.kts'
-          with open(path, 'r') as f:
-              content = f.read()
+  run: |
+    python3 - <<'PYEOF'
+    import re
+    
+    path = 'android/app/build.gradle.kts'
+    with open(path, 'r') as f:
+        content = f.read()
 
-          imports = "import java.util.Properties\nimport java.io.FileInputStream\n\n"
-          if "import java.util.Properties" not in content:
-              content = imports + content
+    imports = "import java.util.Properties\nimport java.io.FileInputStream\n\n"
+    if "import java.util.Properties" not in content:
+        content = imports + content
 
-          signing_config = """
-              signingConfigs {
-                  create("release") {
-                      val keystoreProperties = Properties()
-                      val keystorePropertiesFile = rootProject.file("key.properties")
-                      if (keystorePropertiesFile.exists()) {
-                          keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-                      }
-                      keyAlias = keystoreProperties["keyAlias"] as String?
-                      keyPassword = keystoreProperties["keyPassword"] as String?
-                      storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-                      storePassword = keystoreProperties["storePassword"] as String?
-                  }
-              }
+    signing_config = """
+        signingConfigs {
+            create("release") {
+                val keystoreProperties = Properties()
+                val keystorePropertiesFile = rootProject.file("key.properties")
+                if (keystorePropertiesFile.exists()) {
+                    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+                }
+                keyAlias = keystoreProperties["keyAlias"] as String?
+                keyPassword = keystoreProperties["keyPassword"] as String?
+                storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+                storePassword = keystoreProperties["storePassword"] as String?
+            }
+        }
 
-          """
-          
-          if "signingConfigs {" not in content:
-              content = content.replace("    buildTypes {", signing_config + "    buildTypes {")
+    """
+    
+    if "signingConfigs {" not in content:
+        content = content.replace("    buildTypes {", signing_config + "    buildTypes {")
 
-          content = content.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
+    content = content.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
 
-          with open(path, 'w') as f:
-              f.write(content)
-          print("Archivo build.gradle.kts modificado con éxito.")
-          PYEOF
+    # local_auth requiere minSdk >= 23.
+    content = re.sub(
+        r'minSdk\s*=\s*flutter\.minSdkVersion',
+        'minSdk = maxOf(flutter.minSdkVersion, 23)',
+        content
+    )
+
+    with open(path, 'w') as f:
+        f.write(content)
+    print("Archivo build.gradle.kts modificado con éxito.")
+    PYEOF
 
       - name: Descargar dependencias
         run: flutter pub get
