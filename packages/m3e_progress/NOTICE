@@ -1,0 +1,17 @@
+Este paquete (m3e_progress) es un conjunto de widgets de progreso
+(lineal, wave slider, arc wave, morphing play/pause) para Material 3
+Expressive en Flutter.
+
+Ideas y referencias conceptuales tomadas de:
+  - Rhythm (chromahub/rhythm-app), GPL v3
+    https://github.com/chromahub/rhythm-app
+
+Rhythm es GPL v3. Este paquete NO copia código de Rhythm; usa
+solamente ideas conceptuales (onda sinusoidal sobre el track,
+morphing del thumb al presionar, haptics al scrub) reescritas
+desde cero.
+
+Depende de m3e_shapes, que es MIT (deminearchiver) y porta código
+Apache 2.0 de Google (androidx.graphics.shapes + MaterialShapes).
+
+Este paquete se distribuye bajo MIT.
