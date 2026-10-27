@@ -37,23 +37,24 @@ class RelationshipSummaryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Si el caller no pasa una relación, leemos del provider.
-    // En ambos casos el resultado es no-null.
+    // Si el caller no pasa relación, leemos del provider.
+    // El `??` garantiza que `rel` es no-null.
     final rel = relationship ?? ref.watch(relationshipProvider);
-    return switch (variant) {
-      RelationshipCardVariant.hero => _HeroCard(
-          relationship: rel,
-          onTap: onTap,
-          showDays: showDays,
-          useHapticOnTap: useHapticOnTap,
-        ),
-      RelationshipCardVariant.compact => _CompactCard(
-          relationship: rel,
-          onTap: onTap,
-          showDays: showDays,
-          useHapticOnTap: useHapticOnTap,
-        ),
-    };
+
+    if (variant == RelationshipCardVariant.hero) {
+      return _HeroCard(
+        relationship: rel,
+        onTap: onTap,
+        showDays: showDays,
+        useHapticOnTap: useHapticOnTap,
+      );
+    }
+    return _CompactCard(
+      relationship: rel,
+      onTap: onTap,
+      showDays: showDays,
+      useHapticOnTap: useHapticOnTap,
+    );
   }
 }
 
