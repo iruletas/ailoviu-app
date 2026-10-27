@@ -3,7 +3,10 @@
 _Última actualización: 2026-10-27_
 
 ## Fase actual
-Fase 1 – Shell + Ajustes + Relación (casi completa)
+**Fase 1 cerrada.** Shell + Ajustes + Relación + Apariencia + About
+todas rediseñadas en M3E.
+
+Próxima: **Fase 2 — Home real**.
 
 ## ✅ Hecho
 
@@ -16,55 +19,112 @@ Fase 1 – Shell + Ajustes + Relación (casi completa)
       de Gradle.
 - [x] Keystore generado, guardado en Secrets y configurado para firmar
       la APK.
-- [x] Versión forzada a `0.1.0` con auto-incremento del `versionCode`.
 - [x] APK firmada descargada e instalada en el celular.
 
-### Fase 1 — Shell + Ajustes + Relación
-- [x] `lib/main.dart` con `ProviderScope`.
-- [x] `lib/app.dart` con `MaterialApp`, `theme`/`darkTheme`/`themeMode`
-      desde Riverpod.
-- [x] `lib/screens/main_shell.dart`: navbar flotante arriba con
-      `PageView` y 4 destinos (Inicio, Calendario, Mensajes, Juegos) +
-      FAB de engranaje a la derecha para Ajustes. Sin `AppBar`.
-- [x] Placeholders: `home_screen`, `calendar_screen`,
-      `connection_screen`, `play_screen`.
-- [x] `core/app_theme.dart`: `buildTheme({brightness, seed, amoled})`.
-- [x] `core/seed_palette.dart`: 6 colores semilla curados.
-- [x] `providers/settings_providers.dart`: `AppSettings` +
-      `SettingsNotifier` con persistencia de `themeMode`, `seedColor`,
-      `amoled`.
-- [x] `providers/relationship_providers.dart`: `AppRelationship`,
-      `RelationshipType` (hetero, lesbiana, gay, poliamor/trio,
-      abierta, otro), `RelationshipNotifier` con persistencia de
-      `partnerNames`, `type`, `startDate`.
-- [x] `widgets/relationship_preview.dart`: header reutilizable con
-      avatares de inicial + seed, nombres, tipo y días juntos.
-- [x] `screens/settings_screen.dart`: hub con `ListTile`s y `subtitle`
-      dinámico.
-- [x] `screens/appearance_screen.dart`: `SegmentedButton`
-      (Sistema/Claro/Oscuro con `phone_android_outlined` para Sistema),
-      `SwitchListTile` AMOLED (deshabilitado si no es oscuro), `Wrap`
-      de chips de seed color.
-- [x] `screens/relationship_screen.dart`: tipo de relación con formas
-      geométricas, nombres autoguardados, fecha de inicio, vista previa
-      en vivo, eliminar con confirmación.
-- [x] `screens/about_screen.dart`: versión + licencias. **Fea**
-      (cosmética pendiente).
-- [x] `pubspec.yaml` con `shared_preferences ^2.3.0` y
-      `flutter_riverpod ^2.5.1`.
-- [x] Reorganización de `lib/` a estructura plana por capas
-      (`core/`, `providers/`, `screens/`, `widgets/`).
-- [x] Workflow `reorganize.yml` + `tools/reorganize.py` probados
-      (14 archivos movidos, 4 imports reescritos, 11 carpetas vacías
-      borradas).
-- [x] APK compilada con todos los cambios e instalada.
+### Fase 1 — Shell + Ajustes + Relación (cerrada 2026-10-27)
 
-## 🔜 Siguiente (resto de Fase 1)
-1. `home_screen.dart`: tarjeta "Días juntos" leyendo
-   `relationshipProvider` (startDate). Reutilizar `RelationshipPreview`.
-2. Nombres de pareja: ya hechos en `relationship_screen.dart`.
-3. Revisar cosmética de `about_screen.dart`.
-4. Añadir destinos al navbar solo cuando aparezcan features reales.
+#### Navegación y shell
+- [x] `main_shell.dart`: navbar flotante **abajo, centrada, tipo
+      pastilla**, con `BackdropFilter` (blur 24), `surfaceContainerHigh`
+      translúcido, `BorderRadius.circular(32)`. Indicador activo con
+      ancho elástico e íconos outlined → rounded con escala 1.15×.
+      Respuesta háptica y compresión 0.92× al presionar.
+- [x] Botón de ajustes como **cápsula flotante arriba a la derecha**,
+      con `tertiaryContainer` y badge pulsante opcional
+      (`kShowSettingsBadge = false`).
+- [x] `PageView` con padding inferior para no quedar tapado por la
+      navbar.
+
+#### Ajustes (`settings_screen.dart`)
+- [x] `CustomScrollView` + `SliverAppBar.large` "Ajustes" +
+      `TonalBackButton`.
+- [x] Bento cards con `SectionLabel` uppercase.
+- [x] Card "Tema y color" con `ThemeBadges` (chips + punto de color).
+- [x] Hero card "Datos de la relación" (`RelationshipSummaryCard`
+      variante `hero`).
+- [x] Footer "Ailoviu / versión dinámica / Acerca de"
+      (`AboutFooterCard`).
+- [x] Transición orgánica a subpantallas con `PageRouteBuilder`
+      (fade + scale 0.96→1.0, `easeOutCubic`).
+
+#### Tema y color (`appearance_screen.dart`)
+- [x] `SliverAppBar.large` con `TonalBackButton`.
+- [x] `BouncingScrollPhysics` + `CustomScrollView`.
+- [x] Bento cards con `TonalMicroHeader`.
+- [x] Modo brillo con 3 `BrightnessCard` (Sistema/Claro/Oscuro)
+      independientes, selección `primaryContainer` + ícono 1.15×.
+- [x] Tarjeta AMOLED con `AnimatedOpacity` (1.0 → 0.5 si no aplica) +
+      badge "Solo en modo oscuro".
+- [x] `SeedColorChip` con **morphing real** entre `M3EShape.circle` y
+      `M3EShape.cookie4Sided`, glow del propio color, escala 1.10× al
+      seleccionar, 0.85× al presionar.
+
+#### Relación (`relationship_screen.dart`)
+- [x] `SliverAppBar.large` con `TonalBackButton`.
+- [x] `RelationshipPreview` rediseñado como hero card con gradiente
+      tonal, avatares, `AnniversaryBadge` ("2 años y 4 meses juntos").
+      Se anima con fade + scale al cambiar datos.
+- [x] Selector de tipo con `ShapeSelectorCard`: mosaico de formas M3E
+      (`circle`, `triangle`, `square`, `cookie6Sided`, `diamond`,
+      `arch`). Selección con escala 1.08×, outlined → filled.
+- [x] Nombres con `TextField` relleno (radio 20), avatar A/B/C en
+      `secondaryContainer`, focus con iluminación primary.
+- [x] `AnniversaryCard` con estado vacío y configurado, fecha extendida
+      ("14 de febrero, 2022") + chip "2 años".
+- [x] `DangerActionCard` + `ConfirmDeleteDialog` M3E.
+- [x] `BouncingScrollPhysics`.
+- [x] Labels corregidos: "Hétero" (con tilde), "Poliamor" (sin "Trio").
+
+#### Acerca de (`about_screen.dart`)
+- [x] `SliverAppBar.large` "Acerca de" + `TonalBackButton`.
+- [x] `AboutHeroCard` con corazón `M3EShape.heart` con heartbeat
+      animado (1.0 → 1.08×), "Ailoviu" en `displayMedium` w900, chip
+      de versión **dinámico** vía `package_info_plus`.
+- [x] Easter egg háptico: doble `mediumImpact` al tocar el corazón.
+- [x] `_PurposeCard` con mensaje narrativo y firma.
+- [x] `_LicensesCard` con `showLicensePage` custom.
+- [x] `_ActionChipsRow` (Calificar / Sitio web / Compartir) con
+      `SnackBar "próximamente"`.
+- [x] `_CopyrightFooter` con año automático.
+
+#### Providers
+- [x] `relationship_providers.dart`: enum con labels correctos
+      ("Hétero", "Poliamor"). Sin "Trieja" ni "Trio".
+- [x] `app_info_providers.dart`: `appVersionProvider` y
+      `appBuildNumberProvider` vía `package_info_plus`.
+
+#### Paquetes locales
+- [x] `packages/m3e_shapes/` integrado: 35 formas M3E con morphing
+      real vía `M3EMorphClip`.
+- [x] `packages/m3e_progress/` presente, aún sin usar en la app.
+- [x] `pubspec.yaml` con `m3e_shapes: { path: packages/m3e_shapes }`
+      y `package_info_plus: ^8.0.0`.
+
+#### Workflow
+- [x] `build.yml` con auto-versionado por `github.run_number`
+      (`0.1.${run_number}+${run_number}`). Próxima build = 0.1.28.
+- [x] Eliminados steps obsoletos de versionado hardcodeado.
+
+#### Documentación
+- [x] `ARQUITECTURA.md` reescrito centrado en reglas duras (14
+      reglas numeradas), sin inventario de pantallas.
+- [x] `ESTADO.md` actualizado (este archivo).
+- [x] `PENDIENTES.md` actualizado con ítems nuevos.
+- [x] `sesion-2026-10-27.md` con el resumen completo de la sesión.
+
+## 🔜 Siguiente (Fase 2)
+
+1. **`home_screen.dart` real**:
+   - Hero card con `RelationshipSummaryCard(variant: compact)` o
+     `RelationshipPreview`.
+   - "Días juntos" con `AnniversaryBadge`.
+   - Cards de acceso rápido a "Mensajes" y "Calendario" cuando esas
+     pantallas existan.
+2. **`calendar_screen.dart`** real (hoy placeholder).
+3. **`connection_screen.dart`** real (mensajes, hoy placeholder).
+4. **`play_screen.dart`** real (juegos, hoy placeholder).
+5. **URLs reales** para "Calificar", "Sitio web" y "Compartir" en
+   About (hoy `SnackBar "próximamente"`).
 
 ## 🐛 Bugs abiertos
 - (ninguno)
@@ -110,18 +170,31 @@ Consecuencias para la IA:
   anterior) porque cada iteración cuesta ~5-10 min de CI.
 - Al reorganizar archivos, los imports rotos (especialmente los que no
   empiezan con `./` o `../`) hay que corregirlos a mano; el script
-  `reorganize.py` tiene bugs conocidos (ver `PENDIENTES.md` ítem 9).
+  `reorganize.py` tiene bugs conocidos (ver `PENDIENTES.md` ítem 8).
 
 ## Instrucción explícita para la IA: idioma y estilo
 
 - **Sentence case** en toda la UI.
 - **Español mexicano o neutro**. Evitar castellanismos.
 - **"Relación"** en UI, nunca "pareja".
+- **"Hétero"** con tilde.
+- **"Poliamor"** en UI, nunca "Trio" ni "Trieja".
 - No usar la palabra "backlog" en conversación; decir "pendientes" o
   "lo anotado". El archivo se llama `PENDIENTES.md`.
 
 ## Instrucción explícita para la IA: pantallas sin scroll
 
-Toda propuesta de UI debe respetar la regla "scroll en pantallas
-principales" de `ARQUITECTURA.md`. Si el contenido no cabe, proponer
-reducción, agrupación o scroll justificado, en ese orden.
+La regla "sin scroll" aplica **solo a pestañas del shell** (Inicio,
+Calendario, Mensajes, Juegos). Las **rutas push** (Ajustes, Tema y
+color, Datos de la relación, Acerca de) **pueden scrollear libremente**
+con `CustomScrollView` + `SliverList`. No proponer "reducir para que
+quepa" en pantallas push.
+
+## Instrucción explícita para la IA: regla de los MD
+
+Los archivos `.md` (`ARQUITECTURA.md`, `ESTADO.md`, `PENDIENTES.md`,
+`sesion-*.md`) **no se tocan durante la sesión de trabajo**. Se
+actualizan en un **commit único al cierre de la sesión**.
+
+**Motivo:** evitar commits intermedios de docs que interrumpen el flujo
+de builds y dificultan el diff.
