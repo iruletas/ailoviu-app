@@ -37,6 +37,8 @@ class RelationshipSummaryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Si el caller no pasa una relación, leemos del provider.
+    // En ambos casos el resultado es no-null.
     final rel = relationship ?? ref.watch(relationshipProvider);
     return switch (variant) {
       RelationshipCardVariant.hero => _HeroCard(
@@ -322,9 +324,7 @@ class _CompactCardState extends State<_CompactCard> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      hasAnyData
-                          ? rel.type.label
-                          : 'Sin configurar',
+                      hasAnyData ? rel.type.label : 'Sin configurar',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
