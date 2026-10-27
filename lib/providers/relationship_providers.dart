@@ -66,6 +66,10 @@ class AppRelationship {
   List<String> get visibleNames => partnerNames.take(visibleCount).toList();
 }
 
+/// Notifier NO nullable: el estado siempre es un [AppRelationship].
+/// El provider de abajo lo declara como `StateNotifier<AppRelationship>`
+/// (sin `?`), así `ref.watch(relationshipProvider)` devuelve
+/// [AppRelationship] no-null garantizado por el compilador.
 class RelationshipNotifier extends StateNotifier<AppRelationship> {
   RelationshipNotifier() : super(const AppRelationship()) {
     _load();
@@ -146,7 +150,10 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
   }
 }
 
-final relationshipProvider =
+/// Provider con tipo explícito no-null.
+/// `StateNotifier<RelationshipNotifier, AppRelationship>` (sin `?`).
+final StateNotifierProvider<RelationshipNotifier, AppRelationship>
+    relationshipProvider =
     StateNotifierProvider<RelationshipNotifier, AppRelationship>(
   (ref) => RelationshipNotifier(),
 );
