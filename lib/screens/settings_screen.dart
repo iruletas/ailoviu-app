@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/relationship_providers.dart';
 import '../providers/settings_providers.dart';
 import '../widgets/about_footer_card.dart';
 import '../widgets/relationship_summary_card.dart';
@@ -47,7 +46,7 @@ class SettingsScreen extends ConsumerWidget {
                 foreground: scheme.onPrimaryContainer,
               ),
               title: 'Tema y color',
-              subtitle: _ThemeBadges(settings: settings),
+              subtitle: ThemeBadges(settings: settings),
               trailing: Icon(
                 Icons.chevron_right_rounded,
                 color: scheme.onSurfaceVariant,
@@ -102,54 +101,6 @@ class SettingsScreen extends ConsumerWidget {
           );
         },
       ),
-    );
-  }
-}
-
-// ── Badges de tema (privados, solo se usan aquí) ─────────────────────────
-class _ThemeBadges extends StatelessWidget {
-  final AppSettings settings;
-  const _ThemeBadges({required this.settings});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final modeLabel = switch (settings.themeMode) {
-      ThemeMode.light => 'Claro',
-      ThemeMode.dark => 'Oscuro',
-      ThemeMode.system => 'Sistema',
-    };
-
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        MiniChip(
-          label: modeLabel,
-          background: scheme.secondaryContainer,
-          foreground: scheme.onSecondaryContainer,
-        ),
-        if (settings.amoled)
-          MiniChip(
-            label: 'AMOLED',
-            background: scheme.tertiaryContainer,
-            foreground: scheme.onTertiaryContainer,
-            bold: true,
-          ),
-        Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: settings.seedColor,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: scheme.outlineVariant,
-              width: 1.5,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
