@@ -1,82 +1,25 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/relationship_models.dart';
+import 'prefs_provider.dart';
+
+export '../models/relationship_models.dart';
 
 // ── Claves (prefijo relationship.) ────────────────────────────────────────
 const _kPartnerNames = 'relationship.partnerNames';
 const _kType = 'relationship.type';
 const _kStartDate = 'relationship.startDate';
 
-/// Tipos de relación soportados hoy.
-/// Solo [polyamorous] habilita el tercer miembro.
-enum RelationshipType {
-  hetero,
-  lesbian,
-  gay,
-  polyamorous,
-  open,
-  other;
-
-  String get label {
-    switch (this) {
-      case RelationshipType.hetero:
-        return 'Hétero';
-      case RelationshipType.lesbian:
-        return 'Lesbiana';
-      case RelationshipType.gay:
-        return 'Gay';
-      case RelationshipType.polyamorous:
-        return 'Poliamor';
-      case RelationshipType.open:
-        return 'Abierta';
-      case RelationshipType.other:
-        return 'Otro';
-    }
-  }
-
-  bool get allowsThirdMember => this == RelationshipType.polyamorous;
-}
-
-@immutable
-class AppRelationship {
-  final List<String> partnerNames;
-  final RelationshipType type;
-  final DateTime? startDate;
-
-  const AppRelationship({
-    this.partnerNames = const ['', ''],
-    this.type = RelationshipType.hetero,
-    this.startDate,
-  });
-
-  AppRelationship copyWith({
-    List<String>? partnerNames,
-    RelationshipType? type,
-    DateTime? startDate,
-  }) {
-    return AppRelationship(
-      partnerNames: partnerNames ?? this.partnerNames,
-      type: type ?? this.type,
-      startDate: startDate ?? this.startDate,
-    );
-  }
-
-  int get visibleCount => type.allowsThirdMember ? 3 : 2;
-
-  List<String> get visibleNames => partnerNames.take(visibleCount).toList();
-}
-
-/// Notifier NO nullable: el estado siempre es un [AppRelationship].
-/// El provider de abajo lo declara como `StateNotifier<AppRelationship>`
-/// (sin `?`), así `ref.watch(relationshipProvider)` devuelve
-/// [AppRelationship] no-null garantizado por el compilador.
 class RelationshipNotifier extends StateNotifier<AppRelationship> {
-  RelationshipNotifier() : super(const AppRelationship()) {
+  RelationshipNotifier(this._prefsFuture) : super(const AppRelationship()) {
     _load();
   }
 
+  final Future<SharedPreferences> _prefsFuture;
+
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
 
     final names = prefs.getStringList(_kPartnerNames);
     final typeStr = prefs.getString(_kType);
@@ -97,7 +40,7 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
   }
 
   Future<void> _persistNames() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
     await prefs.setStringList(_kPartnerNames, state.partnerNames);
   }
 
@@ -122,7 +65,7 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
       type: type,
       startDate: state.startDate,
     );
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
     await prefs.setString(_kType, type.name);
     await _persistNames();
   }
@@ -133,7 +76,7 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
       type: state.type,
       startDate: date,
     );
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
     if (date == null) {
       await prefs.remove(_kStartDate);
     } else {
@@ -143,7 +86,7 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
 
   Future<void> clear() async {
     state = const AppRelationship();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefsFuture;
     await prefs.remove(_kPartnerNames);
     await prefs.remove(_kType);
     await prefs.remove(_kStartDate);
@@ -151,9 +94,8 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
 }
 
 /// Provider con tipo explícito no-null.
-/// `StateNotifier<RelationshipNotifier, AppRelationship>` (sin `?`).
 final StateNotifierProvider<RelationshipNotifier, AppRelationship>
     relationshipProvider =
     StateNotifierProvider<RelationshipNotifier, AppRelationship>(
-  (ref) => RelationshipNotifier(),
+  (ref) => RelationshipNotifier(ref.read(prefsProvider.future)),
 );
