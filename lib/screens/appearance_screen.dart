@@ -31,6 +31,8 @@ class AppearanceScreen extends ConsumerWidget {
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
+          // SliverAppBar.large SIN flexibleSpace custom.
+          // M3 maneja el fade entre título expandido y colapsado.
           SliverAppBar.large(
             backgroundColor: scheme.surface,
             surfaceTintColor: Colors.transparent,
@@ -43,25 +45,9 @@ class AppearanceScreen extends ConsumerWidget {
             ),
             title: Text(
               'Tema y color',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
-            expandedHeight: 180,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsetsDirectional.only(
-                start: 20,
-                bottom: 16,
-                end: 20,
-              ),
-              title: Text(
-                'Tema y color',
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
-                  color: scheme.onSurface,
-                ),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
               ),
             ),
           ),
@@ -166,9 +152,6 @@ class AppearanceScreen extends ConsumerWidget {
   }
 }
 
-// ── Tarjeta AMOLED con opacidad reactiva ─────────────────────────────────
-// Privada: es específica de esta pantalla. Si mañana se reusa (poco
-// probable), se extrae con el 2º uso real delante.
 class _AmoledCard extends StatefulWidget {
   final bool enabled;
   final bool value;
