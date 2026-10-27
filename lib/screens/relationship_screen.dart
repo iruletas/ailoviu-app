@@ -134,25 +134,9 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
             ),
             title: Text(
               'Datos de la relación',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
-            expandedHeight: 180,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsetsDirectional.only(
-                start: 20,
-                bottom: 16,
-                end: 20,
-              ),
-              title: Text(
-                'Datos de la relación',
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
-                  color: scheme.onSurface,
-                ),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
               ),
             ),
           ),
@@ -160,11 +144,8 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // ── Hero: vista previa en vivo ──────────────────────
                 const RelationshipPreview(),
                 const SizedBox(height: 24),
-
-                // ── Tipo de relación ────────────────────────────────
                 BentoCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,8 +174,6 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // ── Nombres ─────────────────────────────────────────
                 BentoCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,14 +203,10 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // ── Aniversario ─────────────────────────────────────
                 AnniversaryCard(
                   startDate: rel.startDate,
                   onTap: _pickDate,
                 ),
-
-                // ── Eliminar ────────────────────────────────────────
                 if (hasAnyData) ...[
                   const SizedBox(height: 16),
                   DangerActionCard(
@@ -265,9 +240,6 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
   }
 }
 
-// ── Campo de texto con avatar ────────────────────────────────────────────
-// Privado: el prefijo A/B/C es demasiado específico de esta pantalla
-// para promoverlo a widgets/. Si mañana se reusa, se extrae.
 class _MemberField extends StatelessWidget {
   final String letter;
   final TextEditingController controller;
