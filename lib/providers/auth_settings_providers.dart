@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/auth_keys.dart';
-import '../core/auth_models.dart';
-import '../core/prefs_provider.dart';
+import '../models/auth_models.dart';
+import '../services/auth_keys.dart';
+import 'prefs_provider.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
 // AppAuthSettings (persistido)
@@ -26,6 +26,7 @@ class AuthSettingsNotifier extends StateNotifier<AppAuthSettings> {
     final pinHash = prefs.getString(AuthKeys.appPinHash);
 
     state = AppAuthSettings(
+      loaded: true,
       appLockEnabled: enabled,
       appLockTimeout:
           timeoutMs != null ? Duration(milliseconds: timeoutMs) : null,
@@ -53,15 +54,15 @@ class AuthSettingsNotifier extends StateNotifier<AppAuthSettings> {
   }
 
   Future<void> setSystemAuthAvailable(bool value) async {
+    if (state.systemAuthAvailable == value) return;
     state = state.copyWith(systemAuthAvailable: value);
     final prefs = await _prefsFuture;
     await prefs.setBool(AuthKeys.systemAuthAvailable, value);
   }
 
-  /// Marca si hay PIN propio configurado. **No** escribe el hash:
-  /// eso lo hace `auth_service` en Build 2, que es quien conoce el
-  /// algoritmo. Este método solo sincroniza el flag y limpia el hash
-  /// cuando se desactiva.
+  /// Marca si hay PIN propio configurado. El hash lo escribe
+  /// `AuthService.setAppPin`; este método solo sincroniza el flag y
+  /// limpia los hashes cuando se desactiva.
   Future<void> markAppPinConfigured(bool value) async {
     state = state.copyWith(appPinFallbackConfigured: value);
     final prefs = await _prefsFuture;
@@ -81,8 +82,6 @@ final authSettingsProvider =
 // PrivateFeatureLock (persistido por feature)
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Mapa `featureId → PrivateFeatureLock`. Se persiste con prefijo
-/// `auth.featureLock.<featureId>`.
 class FeatureLocksNotifier
     extends StateNotifier<Map<String, PrivateFeatureLock>> {
   FeatureLocksNotifier(this._prefsFuture)
@@ -123,8 +122,8 @@ class FeatureLocksNotifier
   }
 }
 
-final featureLocksProvider =
-    StateNotifierProvider<FeatureLocksNotifier, Map<String, PrivateFeatureLock>>(
+final featureLocksProvider = StateNotifierProvider<FeatureLocksNotifier,
+    Map<String, PrivateFeatureLock>>(
   (ref) => FeatureLocksNotifier(ref.read(prefsProvider.future)),
 );
 
@@ -132,25 +131,8 @@ final featureLocksProvider =
 // AuthSession (en memoria, no persistido)
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Estado de la sesión de auth en foreground.
-///
-/// - `appUnlocked`: la app pasó la auth de app-lock (o el app-lock
-///   está desactivado).
-/// - `unlockedFeatures`: features privadas desbloqueadas en esta
-///   sesión. Al salir de una feature, se remueve.
 class AuthSessionNotifier extends StateNotifier<AuthSession> {
   AuthSessionNotifier() : super(const AuthSession());
-
-  /// Sincroniza el estado de la sesión con el toggle de app-lock.
-  /// Si el app-lock se desactiva, la app queda desbloqueada. Si se
-  /// activa, NO forzamos un re-bloqueo inmediato (interrumpiría la
-  /// sesión actual); el bloqueo real ocurre al volver del background
-  /// o al reiniciar la app.
-  void syncWithAppLock({required bool appLockEnabled}) {
-    if (!appLockEnabled && !state.appUnlocked) {
-      state = state.copyWith(appUnlocked: true);
-    }
-  }
 
   void unlockApp() {
     state = state.copyWith(appUnlocked: true);
@@ -178,12 +160,13 @@ class AuthSessionNotifier extends StateNotifier<AuthSession> {
 final authSessionProvider =
     StateNotifierProvider<AuthSessionNotifier, AuthSession>((ref) {
   final notifier = AuthSessionNotifier();
-  final initial = ref.read(authSettingsProvider);
-  notifier.syncWithAppLock(appLockEnabled: initial.appLockEnabled);
+
   ref.listen<AppAuthSettings>(authSettingsProvider, (prev, next) {
-    if (prev?.appLockEnabled != next.appLockEnabled) {
-      notifier.syncWithAppLock(appLockEnabled: next.appLockEnabled);
+    if (prev == null || !prev.loaded) return;
+    if (prev.appLockEnabled != next.appLockEnabled) {
+      notifier.unlockApp();
     }
   });
+
   return notifier;
 });
