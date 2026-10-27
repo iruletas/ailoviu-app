@@ -2,37 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/prefs_provider.dart';
+import '../models/settings_models.dart';
+import 'prefs_provider.dart';
+
+export '../models/settings_models.dart';
 
 // ── Claves (prefijo settings.) ────────────────────────────────────────────
 const _kThemeMode = 'settings.themeMode';
 const _kSeedColor = 'settings.seedColor';
 const _kAmoled = 'settings.amoled';
-
-@immutable
-class AppSettings {
-  final ThemeMode themeMode;
-  final Color seedColor;
-  final bool amoled;
-
-  const AppSettings({
-    this.themeMode = ThemeMode.system,
-    this.seedColor = const Color(0xFFFF4081),
-    this.amoled = false,
-  });
-
-  AppSettings copyWith({
-    ThemeMode? themeMode,
-    Color? seedColor,
-    bool? amoled,
-  }) {
-    return AppSettings(
-      themeMode: themeMode ?? this.themeMode,
-      seedColor: seedColor ?? this.seedColor,
-      amoled: amoled ?? this.amoled,
-    );
-  }
-}
 
 class SettingsNotifier extends StateNotifier<AppSettings> {
   SettingsNotifier(this._prefsFuture) : super(const AppSettings()) {
