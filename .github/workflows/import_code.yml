@@ -1,0 +1,28 @@
+name: Import Code
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v5
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Exportar repositorio a JSON
+        run: python tools/import_code.py
+
+      - name: Subir JSON como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proyecto-completo-json
+          path: proyecto_completo.json
+          retention-days: 30
