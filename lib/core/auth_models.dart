@@ -9,6 +9,10 @@ import 'package:flutter/foundation.dart';
 /// como fallback.
 @immutable
 class AppAuthSettings {
+  /// `false` hasta que `SharedPreferences` termine de cargar. El gate
+  /// de auth usa este flag para no decidir antes de tiempo.
+  final bool loaded;
+
   /// Si `true`, la app pide autenticación al abrir y respeta
   /// [appLockTimeout] al volver del background.
   final bool appLockEnabled;
@@ -30,6 +34,7 @@ class AppAuthSettings {
   final bool appPinFallbackConfigured;
 
   const AppAuthSettings({
+    this.loaded = false,
     this.appLockEnabled = false,
     this.appLockTimeout,
     this.systemAuthAvailable = false,
@@ -37,6 +42,7 @@ class AppAuthSettings {
   });
 
   AppAuthSettings copyWith({
+    bool? loaded,
     bool? appLockEnabled,
     Duration? appLockTimeout,
     bool clearAppLockTimeout = false,
@@ -44,6 +50,7 @@ class AppAuthSettings {
     bool? appPinFallbackConfigured,
   }) {
     return AppAuthSettings(
+      loaded: loaded ?? this.loaded,
       appLockEnabled: appLockEnabled ?? this.appLockEnabled,
       appLockTimeout: clearAppLockTimeout
           ? null
@@ -88,8 +95,8 @@ class PrivateFeatureLock {
 @immutable
 class AuthSession {
   /// `true` cuando la app ya se desbloqueó en esta sesión de
-  /// foreground. Si el app-lock está desactivado, es `true` desde el
-  /// arranque.
+  /// foreground. Empieza en `false`; el gate decide si eso importa
+  /// según `AppAuthSettings.appLockEnabled`.
   final bool appUnlocked;
 
   /// Features privadas desbloqueadas en esta sesión.
