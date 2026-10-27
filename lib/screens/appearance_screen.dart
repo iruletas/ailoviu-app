@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/seed_palette.dart';
 import '../providers/settings_providers.dart';
 import '../widgets/settings_components.dart';
+import '../widgets/tonal_back_button.dart';
 
 class AppearanceScreen extends ConsumerWidget {
   const AppearanceScreen({super.key});
@@ -36,7 +37,7 @@ class AppearanceScreen extends ConsumerWidget {
             scrolledUnderElevation: 0,
             leading: Padding(
               padding: const EdgeInsets.all(8),
-              child: _TonalBackButton(
+              child: TonalBackButton(
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -165,25 +166,9 @@ class AppearanceScreen extends ConsumerWidget {
   }
 }
 
-class _TonalBackButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  const _TonalBackButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return IconButton.filledTonal(
-      onPressed: onPressed,
-      icon: const Icon(Icons.arrow_back_rounded),
-      style: IconButton.styleFrom(
-        backgroundColor: scheme.surfaceContainerHigh,
-        foregroundColor: scheme.onSurface,
-      ),
-      tooltip: 'Volver',
-    );
-  }
-}
-
+// ── Tarjeta AMOLED con opacidad reactiva ─────────────────────────────────
+// Privada: es específica de esta pantalla. Si mañana se reusa (poco
+// probable), se extrae con el 2º uso real delante.
 class _AmoledCard extends StatefulWidget {
   final bool enabled;
   final bool value;
