@@ -120,10 +120,10 @@ jobs:
           storeFile=ailoviu-release-key.jks
           EOF
           echo "key.properties creado."
-          grep -v "Password" android/key.properties
 
-      - name: Sobrescribir build.gradle.kts con configuración de firma
+      - name: Configurar Gradle (eliminar y recrear)
         run: |
+          rm -f android/app/build.gradle.kts
           cat > android/app/build.gradle.kts <<'EOF'
           import java.util.Properties
           import java.io.FileInputStream
@@ -181,6 +181,10 @@ jobs:
               source = "../.."
           }
           EOF
+          
+          echo "=== CONTENIDO DEL ARCHIVO ==="
+          cat android/app/build.gradle.kts
+          echo "=== FIN DEL ARCHIVO ==="
 
       - name: Descargar dependencias
         run: flutter pub get
