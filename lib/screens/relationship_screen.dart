@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../widgets/relationship_preview.dart'';
-import '../providers/relationship_providers.dart'';
+import '../providers/relationship_providers.dart';
+import '../widgets/relationship_preview.dart';
 
 class RelationshipScreen extends ConsumerStatefulWidget {
   const RelationshipScreen({super.key});
@@ -119,9 +119,7 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const RelationshipPreview(),
-
               const SizedBox(height: 24),
-
               Text(
                 'Tipo de relación',
                 style: theme.textTheme.titleMedium,
@@ -151,9 +149,7 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                   }
                 },
               ),
-
               const SizedBox(height: 24),
-
               Text('Nombres', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               for (int i = 0; i < visibleCount; i++) ...[
@@ -183,9 +179,7 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                   ),
                 ),
               ],
-
               const SizedBox(height: 12),
-
               Text(
                 'Fecha de inicio',
                 style: theme.textTheme.titleMedium,
@@ -208,9 +202,7 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                 trailing: const Icon(Icons.edit_outlined),
                 onTap: _pickDate,
               ),
-
               const SizedBox(height: 24),
-
               if (hasAnyData)
                 TextButton.icon(
                   onPressed: _confirmClear,
@@ -220,7 +212,6 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                     foregroundColor: theme.colorScheme.error,
                   ),
                 ),
-
               const SizedBox(height: 16),
             ],
           ),
