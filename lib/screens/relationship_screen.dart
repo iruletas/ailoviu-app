@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/relationship/relationship_preview.dart';
-import '../../../core/relationship/relationship_providers.dart';
+import '../widgets/relationship_preview.dart'';
+import '../providers/relationship_providers.dart'';
 
 class RelationshipScreen extends ConsumerStatefulWidget {
   const RelationshipScreen({super.key});

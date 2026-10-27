@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/settings/settings_providers.dart';
-import '../../../core/theme/seed_palette.dart';
+import '../providers/settings_providers.dart'';
+import '../core/seed_palette.dart'';
 
 class AppearanceScreen extends ConsumerWidget {
   const AppearanceScreen({super.key});

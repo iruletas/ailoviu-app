@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/relationship/relationship_providers.dart';
-import '../../core/settings/settings_providers.dart';
+import '../providers/relationship_providers.dart'';
+import '../providers/settings_providers.dart'';
 import 'about/about_screen.dart';
 import 'appearance/appearance_screen.dart';
 import 'relationship/relationship_screen.dart';
