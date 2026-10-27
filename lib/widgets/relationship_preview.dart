@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/settings_providers.dart'';
-import 'relationship_providers.dart';
+import '../providers/relationship_providers.dart';
+import '../providers/settings_providers.dart';
 
 class RelationshipPreview extends ConsumerWidget {
   const RelationshipPreview({super.key});
