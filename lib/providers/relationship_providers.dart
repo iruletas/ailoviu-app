@@ -20,13 +20,13 @@ enum RelationshipType {
   String get label {
     switch (this) {
       case RelationshipType.hetero:
-        return 'Hetero';
+        return 'Hétero';
       case RelationshipType.lesbian:
         return 'Lesbiana';
       case RelationshipType.gay:
         return 'Gay';
       case RelationshipType.polyamorous:
-        return 'Poliamor / Trio';
+        return 'Poliamor';
       case RelationshipType.open:
         return 'Abierta';
       case RelationshipType.other:
