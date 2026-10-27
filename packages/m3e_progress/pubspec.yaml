@@ -1,0 +1,15 @@
+name: m3e_progress
+description: Progress bars, wave sliders y morphing play/pause para Material 3 Expressive. Basado en el paquete m3e_shapes.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  m3e_shapes:
+    path: ../m3e_shapes
+  vector_math: ^2.4.3
