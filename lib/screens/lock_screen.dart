@@ -17,14 +17,48 @@ class LockScreen extends ConsumerStatefulWidget {
 }
 
 class _LockScreenState extends ConsumerState<LockScreen> {
-  _LockMode _mode = _LockMode.system;
+  late _LockMode _mode;
   bool _busy = false;
   bool _unlocking = false;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _trySystemAuth());
+    final auth = ref.read(authSettingsProvider);
+    _mode = auth.systemAuthAvailable
+        ? _LockMode.system
+        : (auth.appPinFallbackConfigured
+            ? _LockMode.pin
+            : _LockMode.unavailable);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+  }
+
+  Future<void> _init() async {
+    if (!mounted || _initialized) return;
+    _initialized = true;
+
+    // Si el flag dice que no hay auth de sistema, re-chequeamos por si
+    // el usuario configuró biometría con la app ya abierta.
+    final auth = ref.read(authSettingsProvider);
+    if (!auth.systemAuthAvailable) {
+      try {
+        final service = await ref.read(authServiceProvider.future);
+        final available = await service.checkSystemAuthAvailable();
+        if (available && mounted) {
+          await ref
+              .read(authSettingsProvider.notifier)
+              .setSystemAuthAvailable(true);
+          if (!mounted) return;
+          setState(() => _mode = _LockMode.system);
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    if (_mode == _LockMode.system) {
+      await _trySystemAuth();
+    }
   }
 
   Future<void> _trySystemAuth() async {
@@ -72,8 +106,6 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     }
   }
 
-  /// Micro-burst antes de desbloquear: el ícono cambia a "lock_open"
-  /// y se expande durante ~300ms. Comunica éxito antes de salir.
   Future<void> _showUnlockBurst() async {
     HapticFeedback.mediumImpact();
     setState(() {
@@ -182,6 +214,11 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                             ),
                           );
                         },
+                        // Solo renderizamos el hijo actual: evita que
+                        // íconos del modo anterior se vean detrás del
+                        // PinPad durante la transición.
+                        layoutBuilder: (currentChild, previousChildren) =>
+                            currentChild ?? const SizedBox.shrink(),
                         child: _buildActionForMode(),
                       ),
                     ),
@@ -216,9 +253,9 @@ class _LockScreenState extends ConsumerState<LockScreen> {
       case _LockMode.system:
         if (_busy) {
           return const Padding(
+            key: ValueKey('busy-system'),
             padding: EdgeInsets.symmetric(vertical: 20),
             child: SizedBox(
-              key: ValueKey('busy-system'),
               width: 32,
               height: 32,
               child: CircularProgressIndicator(
@@ -242,19 +279,23 @@ class _LockScreenState extends ConsumerState<LockScreen> {
         );
       case _LockMode.pin:
         final auth = ref.read(authSettingsProvider);
-        return Column(
+        final scheme = Theme.of(context).colorScheme;
+        return Container(
           key: const ValueKey('action-pin'),
-          children: [
-            PinPad(length: 4, onCompleted: _onPin),
-            if (auth.systemAuthAvailable) ...[
-              const SizedBox(height: 16),
-              _SwitchMethodChip(
-                icon: Icons.fingerprint_rounded,
-                label: 'Usar huella o rostro',
-                onTap: _switchToSystem,
-              ),
+          color: scheme.surfaceContainerLow,
+          child: Column(
+            children: [
+              PinPad(length: 4, onCompleted: _onPin),
+              if (auth.systemAuthAvailable) ...[
+                const SizedBox(height: 16),
+                _SwitchMethodChip(
+                  icon: Icons.fingerprint_rounded,
+                  label: 'Usar huella o rostro',
+                  onTap: _switchToSystem,
+                ),
+              ],
             ],
-          ],
+          ),
         );
       case _LockMode.unavailable:
         return Column(
