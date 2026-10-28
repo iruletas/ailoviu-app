@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/auth_models.dart';
 import '../providers/auth_settings_providers.dart';
 import '../services/auth_keys.dart';
-import '../services/auth_service.dart';
+import '../services/auth_service.dart'; // ← import agregado
 import '../widgets/settings_components.dart';
 import '../widgets/tonal_back_button.dart';
 import 'pin_setup_screen.dart';
@@ -22,8 +22,6 @@ class SecurityScreen extends ConsumerWidget {
     final featureLocks = ref.watch(featureLocksProvider);
     final featureNotifier = ref.read(featureLocksProvider.notifier);
 
-    // Protección efectiva: si el app-lock global está activo O
-    // cualquier feature privada requiere auth, la app está protegida.
     final anyFeatureLocked =
         featureLocks.values.any((f) => f.requiresAuth);
     final anyProtectionActive = auth.appLockEnabled || anyFeatureLocked;
@@ -490,14 +488,10 @@ class _MethodCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
-    // Caso "apagado": no hay app-lock y ninguna feature bloqueada.
-    // La tarjeta es informativa: muestra qué método SE USARÁ, pero
-    // sin color tonal ni afirmación de "protegido".
     if (!protectionActive) {
       return _OffMethodCard(auth: auth);
     }
 
-    // Caso "activo": al menos una protección está encendida.
     if (auth.systemAuthAvailable) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -672,9 +666,6 @@ class _MethodCard extends StatelessWidget {
       );
     }
 
-    // Protección activa pero sin método disponible. Es un estado
-    // inconsistente: el usuario tiene alguna feature bloqueada, pero
-    // no hay forma de autenticarse. CTA para configurar PIN.
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -738,9 +729,6 @@ class _MethodCard extends StatelessWidget {
   }
 }
 
-/// Tarjeta en estado "apagado": informativa, neutra, sin color tonal.
-/// Solo aparece cuando ni el app-lock ni ninguna feature privada
-/// requieren auth. Comunica qué método *se usará* al activar.
 class _OffMethodCard extends StatelessWidget {
   final AppAuthSettings auth;
 
@@ -754,9 +742,6 @@ class _OffMethodCard extends StatelessWidget {
     final hasSystem = auth.systemAuthAvailable;
     final hasPin = auth.appPinFallbackConfigured;
 
-    // Ícono neutro (nunca verified_user ni pin lleno, que comunican
-    // "activo"). Preferimos fingerprint si hay sistema, pin outlined
-    // si solo hay PIN, error si no hay nada.
     final IconData icon;
     final Color iconColor;
     final String title;
@@ -825,8 +810,6 @@ class _OffMethodCard extends StatelessWidget {
     );
   }
 }
-
-// ── Tarjeta de bloqueo por función ───────────────────────────────────────
 
 class _FeatureLocksCard extends StatelessWidget {
   final Map<String, PrivateFeatureLock> featureLocks;
