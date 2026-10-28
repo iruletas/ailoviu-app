@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/auth_models.dart';
@@ -21,9 +22,18 @@ class AuthSettingsNotifier extends StateNotifier<AppAuthSettings> {
 
     final enabled = prefs.getBool(AuthKeys.appLockEnabled) ?? false;
     final timeoutMs = prefs.getInt(AuthKeys.appLockTimeoutMs);
-    final systemAvailable =
-        prefs.getBool(AuthKeys.systemAuthAvailable) ?? false;
     final pinHash = prefs.getString(AuthKeys.appPinHash);
+
+    // Chequeo real de auth del sistema. Se persiste para que la UI
+    // muestre el método correcto y para que LockScreen arranque en
+    // modo system (huella/PIN/patrón del dispositivo) en vez de pin.
+    bool systemAvailable;
+    try {
+      systemAvailable = await LocalAuthentication().isDeviceSupported();
+    } catch (_) {
+      systemAvailable = prefs.getBool(AuthKeys.systemAuthAvailable) ?? false;
+    }
+    await prefs.setBool(AuthKeys.systemAuthAvailable, systemAvailable);
 
     state = AppAuthSettings(
       loaded: true,
