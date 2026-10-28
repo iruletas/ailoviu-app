@@ -15,9 +15,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
-    <!-- ── Notificaciones (FCM despierta la app) ──────────────── -->
-    <!-- POST_NOTIFICATIONS ya declarado arriba (Android 13+) -->
-
     <!-- ── Juegos en persona (Nearby Connections) ─────────────── -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
@@ -61,11 +58,13 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- ── Foreground service para sync ─────────────────────── -->
+        <!-- Descomentar cuando escribamos ForegroundSyncService (paso 3) -->
+        <!--
         <service
             android:name=".ForegroundSyncService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
+        -->
 
         <!-- ── FCM: canal por defecto ───────────────────────────── -->
         <meta-data
