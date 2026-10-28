@@ -83,16 +83,9 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: Generar archivos faltantes de Flutter (solo si faltan)
+      - name: Generar archivos Android faltantes
         run: |
-          if [ ! -f "android/settings.gradle.kts" ] || \
-             [ ! -f "android/gradle/wrapper/gradle-wrapper.properties" ] || \
-             [ ! -f "android/app/src/main/kotlin/com/iruletas/ailoviu/MainActivity.kt" ]; then
-            echo "Faltan archivos Android críticos. Generando con flutter create..."
-            flutter create --platforms=android --org com.iruletas --project-name ailoviu .
-          else
-            echo "Archivos Android críticos ya existen. No se regeneran."
-          fi
+          flutter create --platforms=android --org com.iruletas --project-name ailoviu .
 
       - name: Decodificar keystore de release
         env:
