@@ -22,6 +22,12 @@ class SecurityScreen extends ConsumerWidget {
     final featureLocks = ref.watch(featureLocksProvider);
     final featureNotifier = ref.read(featureLocksProvider.notifier);
 
+    // Protección efectiva: si el app-lock global está activo O
+    // cualquier feature privada requiere auth, la app está protegida.
+    final anyFeatureLocked =
+        featureLocks.values.any((f) => f.requiresAuth);
+    final anyProtectionActive = auth.appLockEnabled || anyFeatureLocked;
+
     return Scaffold(
       backgroundColor: scheme.surface,
       body: CustomScrollView(
@@ -98,6 +104,7 @@ class SecurityScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
                 _MethodCard(
                   auth: auth,
+                  protectionActive: anyProtectionActive,
                   onChangePin: () => _createPin(context),
                   onRemovePin: () => _confirmRemovePin(context, ref),
                 ),
@@ -467,11 +474,13 @@ class _TimeoutPillState extends State<_TimeoutPill> {
 
 class _MethodCard extends StatelessWidget {
   final AppAuthSettings auth;
+  final bool protectionActive;
   final VoidCallback onChangePin;
   final VoidCallback onRemovePin;
 
   const _MethodCard({
     required this.auth,
+    required this.protectionActive,
     required this.onChangePin,
     required this.onRemovePin,
   });
@@ -481,6 +490,14 @@ class _MethodCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
+    // Caso "apagado": no hay app-lock y ninguna feature bloqueada.
+    // La tarjeta es informativa: muestra qué método SE USARÁ, pero
+    // sin color tonal ni afirmación de "protegido".
+    if (!protectionActive) {
+      return _OffMethodCard(auth: auth);
+    }
+
+    // Caso "activo": al menos una protección está encendida.
     if (auth.systemAuthAvailable) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -655,6 +672,9 @@ class _MethodCard extends StatelessWidget {
       );
     }
 
+    // Protección activa pero sin método disponible. Es un estado
+    // inconsistente: el usuario tiene alguna feature bloqueada, pero
+    // no hay forma de autenticarse. CTA para configurar PIN.
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -711,6 +731,94 @@ class _MethodCard extends StatelessWidget {
             ),
             onPressed: onChangePin,
             child: const Text('Configurar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarjeta en estado "apagado": informativa, neutra, sin color tonal.
+/// Solo aparece cuando ni el app-lock ni ninguna feature privada
+/// requieren auth. Comunica qué método *se usará* al activar.
+class _OffMethodCard extends StatelessWidget {
+  final AppAuthSettings auth;
+
+  const _OffMethodCard({required this.auth});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    final hasSystem = auth.systemAuthAvailable;
+    final hasPin = auth.appPinFallbackConfigured;
+
+    // Ícono neutro (nunca verified_user ni pin lleno, que comunican
+    // "activo"). Preferimos fingerprint si hay sistema, pin outlined
+    // si solo hay PIN, error si no hay nada.
+    final IconData icon;
+    final Color iconColor;
+    final String title;
+    final String subtitle;
+
+    if (hasSystem) {
+      icon = Icons.fingerprint_rounded;
+      iconColor = scheme.onSurfaceVariant;
+      title = 'Huella, PIN o patrón';
+      subtitle = 'Se activará al encender el bloqueo';
+    } else if (hasPin) {
+      icon = Icons.pin_outlined;
+      iconColor = scheme.onSurfaceVariant;
+      title = 'PIN de Ailoviu';
+      subtitle = 'Se activará al encender el bloqueo';
+    } else {
+      icon = Icons.lock_outline_rounded;
+      iconColor = scheme.onSurfaceVariant;
+      title = 'Sin método configurado';
+      subtitle = 'Configura un PIN para poder activar el bloqueo';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, size: 22, color: iconColor),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
