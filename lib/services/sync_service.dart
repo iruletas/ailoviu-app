@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:uuid/uuid.dart';
@@ -50,11 +51,6 @@ class SyncService {
   SyncStatus get currentStatus => _status;
 
   /// Inicializa el servicio.
-  ///
-  /// - Carga deviceId y peerDeviceId de KeyStore.
-  /// - Carga el secreto compartido.
-  /// - Resuelve la config del transporte.
-  /// - Inicializa el transporte si hay config.
   Future<void> initialize() async {
     _deviceId = await _keyStore.getDeviceId();
     if (_deviceId == null) {
@@ -184,7 +180,6 @@ class SyncService {
     final secret = _sharedSecret;
     if (secret == null) return;
 
-    // Verificar firma.
     final valid = _crypto.verifyEnvelope(
       sharedSecret: secret,
       v: envelope.v.toString(),
@@ -197,17 +192,10 @@ class SyncService {
       ciphertext: envelope.ciphertext,
       signature: envelope.signature,
     );
-    if (!valid) {
-      // Firma inválida. Descartar.
-      return;
-    }
+    if (!valid) return;
 
-    // Verificar TTL.
-    if (envelope.isExpired()) {
-      return;
-    }
+    if (envelope.isExpired()) return;
 
-    // Descifrar.
     Map<String, dynamic> payload;
     try {
       payload = await _crypto.decrypt(
@@ -230,7 +218,6 @@ class SyncService {
       SyncEvent(envelope: envelope, payload: syncPayload),
     );
 
-    // Notificación local (si no es un sync request/ack interno).
     if (envelope.type == SyncType.message ||
         envelope.type == SyncType.state) {
       final title = envelope.type == SyncType.message
