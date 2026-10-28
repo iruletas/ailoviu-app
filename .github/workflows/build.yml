@@ -83,7 +83,7 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: Generar archivos faltantes de Flutter
+      - name: Generar archivos faltantes de Flutter (solo si faltan)
         run: |
           if [ ! -f "android/settings.gradle.kts" ] || \
              [ ! -f "android/gradle/wrapper/gradle-wrapper.properties" ] || \
