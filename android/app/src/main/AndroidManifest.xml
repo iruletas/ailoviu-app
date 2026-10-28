@@ -1,13 +1,44 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ── Auth biométrica ──────────────────────────────────────── -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission
         android:name="android.permission.USE_FINGERPRINT"
         android:maxSdkVersion="27"/>
 
+    <!-- ── Red (Firebase, FCM) ─────────────────────────────────── -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- ── Foreground service (opcional, sync en background) ──── -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- ── Notificaciones (FCM despierta la app) ──────────────── -->
+    <!-- POST_NOTIFICATIONS ya declarado arriba (Android 13+) -->
+
+    <!-- ── Juegos en persona (Nearby Connections) ─────────────── -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"/>
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"/>
+
     <application
         android:label="Ailoviu"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -29,6 +60,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- ── Foreground service para sync ─────────────────────── -->
+        <service
+            android:name=".ForegroundSyncService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
+
+        <!-- ── FCM: canal por defecto ───────────────────────────── -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="ailoviu_messages"/>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher"/>
     </application>
     <queries>
         <intent>
