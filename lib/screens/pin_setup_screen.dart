@@ -5,7 +5,6 @@ import 'package:m3e_shapes/m3e_shapes.dart';
 
 import '../providers/auth_settings_providers.dart';
 import '../services/auth_service.dart';
-import '../widgets/settings_components.dart';
 import '../widgets/tonal_back_button.dart';
 import 'pin_pad.dart';
 
