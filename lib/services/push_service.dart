@@ -9,18 +9,26 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 /// - El remitente lee ese token y manda push al destinatario cuando
 ///   escribe un sobre en su inbox.
 ///
-/// El push **no lleva contenido**. Solo lleva `{type, envelopeId}`.
-/// El receptor lee el sobre cifrado de Firebase, lo descifra, y
-/// muestra la notificación local.
+/// **Nota sobre envío de push:** FCM no permite que un cliente
+/// mande push a otro cliente directamente (por seguridad). El envío
+/// requiere una Cloud Function o un servidor. Eso se resuelve en el
+/// bloque de onboarding:
+///   - Opción A: Cloud Function que escucha `inbox/{to}/messages`
+///     y manda push al token del destinatario. Requiere desplegar
+///     la función (una vez por pareja).
+///   - Opción B: foreground service que mantiene la conexión viva,
+///     y la notificación se muestra desde el propio servicio.
+///     Requiere activación manual por el usuario.
+///
+/// Este servicio solo registra el token. El envío se implementa en
+/// el bloque de onboarding.
 class PushService {
   PushService();
 
   final _messaging = FirebaseMessaging.instance;
 
-  /// Obtiene el token FCM del dispositivo.
   Future<String?> getToken() => _messaging.getToken();
 
-  /// Registra el token en Firebase Realtime Database.
   Future<void> registerToken({
     required FirebaseDatabase db,
     required String deviceId,
@@ -33,7 +41,6 @@ class PushService {
     });
   }
 
-  /// Lee el token FCM del otro dispositivo.
   Future<String?> getPeerToken({
     required FirebaseDatabase db,
     required String peerDeviceId,
@@ -45,6 +52,5 @@ class PushService {
     return raw['token'] as String?;
   }
 
-  /// Escucha cambios en el token. Útil cuando FCM rota el token.
   Stream<String> get onTokenRefresh => _messaging.onTokenRefresh;
 }
