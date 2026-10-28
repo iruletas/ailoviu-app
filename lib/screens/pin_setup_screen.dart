@@ -130,6 +130,8 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
                         ),
                       );
                     },
+                    layoutBuilder: (currentChild, previousChildren) =>
+                        currentChild ?? const SizedBox.shrink(),
                     child: _StepBody(
                       key: ValueKey(step),
                       step: step,
@@ -283,17 +285,24 @@ class _StepBody extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          step == 'create'
-              ? 'Elige un PIN de 4 dígitos para desbloquear la app cuando el sistema no pueda hacerlo.'
-              : 'Confirma el PIN que acabas de elegir.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: scheme.onSurfaceVariant,
-            height: 1.4,
+        // Altura fija: ambos pasos reservan el mismo espacio de texto,
+        // así el PinPad no salta verticalmente al cambiar de paso.
+        SizedBox(
+          height: 72,
+          child: Center(
+            child: Text(
+              step == 'create'
+                  ? 'Elige un PIN de 4 dígitos para desbloquear la app.'
+                  : 'Confirma el PIN que acabas de elegir.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
         AnimatedSize(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
@@ -301,7 +310,7 @@ class _StepBody extends StatelessWidget {
               ? const SizedBox(width: double.infinity)
               : _ErrorBanner(text: errorText!),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
         if (saving || success)
           _SavingIndicator(success: success)
         else
