@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/auth_models.dart';
 import '../providers/auth_settings_providers.dart';
 import '../services/auth_keys.dart';
 import '../widgets/settings_components.dart';
@@ -94,7 +95,11 @@ class SecurityScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _MethodCard(auth: auth, onCreatePin: () => _createPin(context)),
+                _MethodCard(
+                  auth: auth,
+                  onChangePin: () => _createPin(context),
+                  onRemovePin: () => _confirmRemovePin(context, ref),
+                ),
                 const SizedBox(height: 16),
                 _FeatureLocksCard(
                   featureLocks: featureLocks,
@@ -137,9 +142,115 @@ class SecurityScreen extends ConsumerWidget {
   }
 
   Future<void> _createPin(BuildContext context) async {
-    await Navigator.of(context).push<bool>(
+    final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const PinSetupScreen()),
     );
+    if (created == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PIN actualizado'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmRemovePin(BuildContext context, WidgetRef ref) async {
+    final auth = ref.read(authSettingsProvider);
+    // No permitir quitar el PIN si es el único método de desbloqueo
+    // disponible (dispositivo sin auth de sistema).
+    if (!auth.systemAuthAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No puedes quitar el PIN: es tu único método de desbloqueo.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        final theme = Theme.of(context);
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(36),
+          ),
+          backgroundColor: scheme.surface,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.errorContainer,
+                  ),
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    size: 32,
+                    color: scheme.onErrorContainer,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Quitar PIN de respaldo',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Podrás seguir desbloqueando con huella o PIN del sistema.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancelar'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: scheme.error,
+                          foregroundColor: scheme.onError,
+                        ),
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Quitar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      final service = await ref.read(authServiceProvider.future);
+      await service.clearAppPin();
+      await ref
+          .read(authSettingsProvider.notifier)
+          .markAppPinConfigured(false);
+    }
   }
 }
 
@@ -163,7 +274,8 @@ class _AppLockRow extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
-    final bg = enabled ? scheme.primaryContainer : scheme.surfaceContainerHighest;
+    final bg =
+        enabled ? scheme.primaryContainer : scheme.surfaceContainerHighest;
     final fg = enabled ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
     final icon = enabled ? Icons.lock_rounded : Icons.lock_open_rounded;
 
@@ -332,8 +444,7 @@ class _TimeoutPillState extends State<_TimeoutPill> {
                 : scheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color:
-                  widget.selected ? scheme.primary : Colors.transparent,
+              color: widget.selected ? scheme.primary : Colors.transparent,
               width: 1.5,
             ),
           ),
@@ -356,48 +467,206 @@ class _TimeoutPillState extends State<_TimeoutPill> {
 // ── Tarjeta de método de desbloqueo ──────────────────────────────────────
 
 class _MethodCard extends StatelessWidget {
-  final dynamic auth;
-  final VoidCallback onCreatePin;
+  final AppAuthSettings auth;
+  final VoidCallback onChangePin;
+  final VoidCallback onRemovePin;
 
-  const _MethodCard({required this.auth, required this.onCreatePin});
+  const _MethodCard({
+    required this.auth,
+    required this.onChangePin,
+    required this.onRemovePin,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
-    final (bg, fg, icon, title, subtitle) = () {
-      if (auth.systemAuthAvailable) {
-        return (
-          scheme.secondaryContainer,
-          scheme.onSecondaryContainer,
-          Icons.verified_user_rounded,
-          'Protegido por el sistema',
-          'Huella, PIN o patrón del dispositivo',
-        );
-      }
-      if (auth.appPinFallbackConfigured) {
-        return (
-          scheme.tertiaryContainer,
-          scheme.onTertiaryContainer,
-          Icons.pin_rounded,
-          'PIN de Ailoviu',
-          'Fallback para dispositivos sin bloqueo',
-        );
-      }
-      return (
-        scheme.errorContainer.withValues(alpha: 0.3),
-        scheme.onErrorContainer,
-        Icons.error_outline_rounded,
-        'Sin método configurado',
-        'Configura un PIN para proteger la app',
+    // Caso 1: hay auth del sistema → método principal.
+    //   - Si hay PIN fallback: mostrar "Cambiar PIN" + "Quitar".
+    //   - Si no hay PIN fallback: mostrar "Añadir PIN de respaldo".
+    // Caso 2: no hay auth del sistema, pero hay PIN fallback → solo
+    //   "Cambiar PIN" (sin "Quitar", porque es el único método).
+    // Caso 3: no hay nada → CTA "Configurar PIN".
+
+    if (auth.systemAuthAvailable) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: scheme.onSecondaryContainer.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.verified_user_rounded,
+                    size: 22,
+                    color: scheme.onSecondaryContainer,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Protegido por el sistema',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Huella, PIN o patrón del dispositivo',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSecondaryContainer
+                              .withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Divider(
+              height: 1,
+              color: scheme.onSecondaryContainer.withValues(alpha: 0.15),
+            ),
+            const SizedBox(height: 12),
+            if (auth.appPinFallbackConfigured)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'PIN de respaldo configurado',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSecondaryContainer
+                            .withValues(alpha: 0.85),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: onChangePin,
+                    child: Text(
+                      'Cambiar',
+                      style: TextStyle(color: scheme.onSecondaryContainer),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: onRemovePin,
+                    child: Text(
+                      'Quitar',
+                      style: TextStyle(color: scheme.error),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Sin PIN de respaldo',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSecondaryContainer
+                            .withValues(alpha: 0.85),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: onChangePin,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: Text(
+                      'Añadir',
+                      style: TextStyle(color: scheme.onSecondaryContainer),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
       );
-    }();
+    }
+
+    if (auth.appPinFallbackConfigured) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: scheme.onTertiaryContainer.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                Icons.pin_rounded,
+                size: 22,
+                color: scheme.onTertiaryContainer,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'PIN de Ailoviu',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onTertiaryContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Único método disponible en este dispositivo',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onTertiaryContainer
+                          .withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: onChangePin,
+              child: Text(
+                'Cambiar',
+                style: TextStyle(color: scheme.onTertiaryContainer),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: bg,
+        color: scheme.errorContainer.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(28),
       ),
       child: Row(
@@ -407,10 +676,14 @@ class _MethodCard extends StatelessWidget {
             height: 44,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: fg.withValues(alpha: 0.12),
+              color: scheme.onErrorContainer.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, size: 22, color: fg),
+            child: Icon(
+              Icons.error_outline_rounded,
+              size: 22,
+              color: scheme.onErrorContainer,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -419,40 +692,34 @@ class _MethodCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  title,
+                  'Sin método configurado',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: fg,
+                    color: scheme.onErrorContainer,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  subtitle,
+                  'Configura un PIN para proteger la app',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: fg.withValues(alpha: 0.85),
+                    color:
+                        scheme.onErrorContainer.withValues(alpha: 0.85),
                   ),
                 ),
               ],
             ),
           ),
-          if (!auth.systemAuthAvailable && !auth.appPinFallbackConfigured)
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: scheme.error,
-                foregroundColor: scheme.onError,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: scheme.error,
+              foregroundColor: scheme.onError,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              onPressed: onCreatePin,
-              child: const Text('Configurar'),
-            )
-          else if (auth.appPinFallbackConfigured &&
-              !auth.systemAuthAvailable)
-            TextButton(
-              onPressed: onCreatePin,
-              child: const Text('Cambiar'),
             ),
+            onPressed: onChangePin,
+            child: const Text('Configurar'),
+          ),
         ],
       ),
     );
@@ -462,7 +729,7 @@ class _MethodCard extends StatelessWidget {
 // ── Tarjeta de bloqueo por función ───────────────────────────────────────
 
 class _FeatureLocksCard extends StatelessWidget {
-  final Map<String, dynamic> featureLocks;
+  final Map<String, PrivateFeatureLock> featureLocks;
   final void Function(String id, bool value) onChanged;
 
   const _FeatureLocksCard({
@@ -490,7 +757,6 @@ class _FeatureLocksCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
 
     return BentoCard(
       child: Column(
