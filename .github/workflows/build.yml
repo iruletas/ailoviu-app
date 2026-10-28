@@ -87,14 +87,6 @@ jobs:
         run: |
           flutter create --platforms=android --org com.iruletas --project-name ailoviu .
 
-      - name: Auto-versionar en pubspec.yaml
-        run: |
-          VERSION="0.1.${{ github.run_number }}"
-          BUILD="${{ github.run_number }}"
-          sed -i -E "s/^version: .*/version: ${VERSION}+${BUILD}/" pubspec.yaml
-          echo "Versión aplicada: ${VERSION}+${BUILD}"
-          grep "^version:" pubspec.yaml
-
       - name: Decodificar keystore de release
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -162,7 +154,7 @@ jobs:
 
           with open(path, 'w') as f:
               f.write(content)
-          print("Archivo build.gradle.kts modificado con éxito.")
+          print("build.gradle.kts modificado con éxito.")
           PYEOF
 
       - name: Descargar dependencias
