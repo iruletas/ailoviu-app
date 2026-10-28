@@ -4,12 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// Teclado numérico para PIN, con feedback expresivo.
-///
-/// - Dots que escalan al llenar (`backOut`).
-/// - Shake horizontal al fallar la validación.
-/// - Backspace reactivo (atenuado cuando vacío, ícono relleno al pulsar).
-/// - Busy state: dots atenuados mientras `onCompleted` está pendiente.
-/// - Háptica progresiva: light por dígito, medium al completar.
 class PinPad extends StatefulWidget {
   final int length;
   final Future<bool> Function(String pin) onCompleted;
@@ -226,7 +220,7 @@ class _PinDotState extends State<_PinDot>
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25), weight: 50),
       TweenSequenceItem(
         tween: Tween(begin: 1.25, end: 1.0)
-            .chain(CurveTween(curve: Curves.backOut)),
+            .chain(CurveTween(curve: Curves.easeOutBack)),
         weight: 50,
       ),
     ]).animate(_fillController);
@@ -322,7 +316,6 @@ class _PinKeyState extends State<_PinKey> {
     final isBackspace = widget.label == 'backspace';
     final disabled = widget.onTap == null;
 
-    // Backspace: opacidad 35% cuando el PIN está vacío.
     final opacity = isBackspace && !widget.isBackspaceActive ? 0.35 : 1.0;
 
     final background = isBackspace
@@ -330,7 +323,9 @@ class _PinKeyState extends State<_PinKey> {
         : scheme.surfaceContainerLow;
 
     return AnimatedOpacity(
-      opacity: disabled ? (isBackspace && !widget.isBackspaceActive ? 0.35 : 0.6) : opacity,
+      opacity: disabled
+          ? (isBackspace && !widget.isBackspaceActive ? 0.35 : 0.6)
+          : opacity,
       duration: const Duration(milliseconds: 180),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
