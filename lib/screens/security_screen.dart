@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/auth_models.dart';
 import '../providers/auth_settings_providers.dart';
 import '../services/auth_keys.dart';
+import '../services/auth_service.dart';
 import '../widgets/settings_components.dart';
 import '../widgets/tonal_back_button.dart';
 import 'pin_setup_screen.dart';
@@ -157,8 +158,6 @@ class SecurityScreen extends ConsumerWidget {
 
   Future<void> _confirmRemovePin(BuildContext context, WidgetRef ref) async {
     final auth = ref.read(authSettingsProvider);
-    // No permitir quitar el PIN si es el único método de desbloqueo
-    // disponible (dispositivo sin auth de sistema).
     if (!auth.systemAuthAvailable) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -481,13 +480,6 @@ class _MethodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
-
-    // Caso 1: hay auth del sistema → método principal.
-    //   - Si hay PIN fallback: mostrar "Cambiar PIN" + "Quitar".
-    //   - Si no hay PIN fallback: mostrar "Añadir PIN de respaldo".
-    // Caso 2: no hay auth del sistema, pero hay PIN fallback → solo
-    //   "Cambiar PIN" (sin "Quitar", porque es el único método).
-    // Caso 3: no hay nada → CTA "Configurar PIN".
 
     if (auth.systemAuthAvailable) {
       return Container(
