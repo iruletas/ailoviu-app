@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_shapes/m3e_shapes.dart';
 
+import '../models/auth_models.dart';
 import '../providers/auth_settings_providers.dart';
 import '../screens/lock_screen.dart';
 
@@ -151,7 +152,6 @@ class _AuthSplashState extends State<_AuthSplash>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Marca pulsante de fondo.
             AnimatedBuilder(
               animation: _pulse,
               builder: (context, _) {
@@ -169,7 +169,6 @@ class _AuthSplashState extends State<_AuthSplash>
                 );
               },
             ),
-            // Squircle con progress M3E.
             Container(
               width: 72,
               height: 72,
