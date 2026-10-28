@@ -86,10 +86,15 @@ jobs:
       - name: Generar archivos Android faltantes
         run: |
           flutter create --platforms=android --org com.iruletas --project-name ailoviu .
-          # flutter create sobrescribe el build.gradle.kts si no lo detecta bien.
-          # Nos aseguramos de que nuestro build.gradle.kts con la firma esté en su lugar
-          # justo después de que flutter create termine.
           git checkout -- android/app/build.gradle.kts || true
+
+      - name: Auto-versionar en pubspec.yaml
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          BUILD="${{ github.run_number }}"
+          sed -i -E "s/^version: .*/version: ${VERSION}+${BUILD}/" pubspec.yaml
+          echo "Versión aplicada: ${VERSION}+${BUILD}"
+          grep "^version:" pubspec.yaml
 
       - name: Decodificar keystore de release
         env:
@@ -119,15 +124,7 @@ jobs:
         run: flutter pub get
 
       - name: Compilar APK
-        run: flutter build apk --release
-
-      - name: Verificar firma (DEBUG)
-        run: |
-          echo "Verificando firma de la APK generada..."
-          # Si el archivo apksigner existe en el SDK de Android, lo usamos para verificar
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk || \
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk || \
-          echo "No se pudo verificar la firma, pero el APK existe."
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: Subir APK como artifact
         uses: actions/upload-artifact@v4
