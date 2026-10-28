@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId = "com.iruletas.ailoviu"
-        minSdk = 23 // Forzamos 23 en duro
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
