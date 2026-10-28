@@ -5,8 +5,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 ///
 /// - Inicializa `flutter_local_notifications` con el canal por
 ///   defecto.
-/// - Escucha mensajes FCM (foreground y background) y muestra la
-///   notificación local cuando llega un sobre.
+/// - Escucha mensajes FCM en foreground y muestra la notificación
+///   local cuando llega un sobre.
 /// - El push de FCM no lleva contenido: solo la referencia al sobre.
 ///   El contenido se lee cifrado de Firebase, se descifra, y se
 ///   muestra.
@@ -29,7 +29,6 @@ class NotificationService {
     const initSettings = InitializationSettings(android: androidSettings);
     await _local.initialize(initSettings);
 
-    // Crear canal de Android.
     final androidPlugin = _local.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(
@@ -42,7 +41,6 @@ class NotificationService {
       ),
     );
 
-    // Pedir permiso de notificaciones (Android 13+).
     await androidPlugin?.requestNotificationsPermission();
 
     _initialized = true;
@@ -71,22 +69,18 @@ class NotificationService {
     );
   }
 
-  /// Configura los handlers de FCM.
+  /// Configura el handler de FCM en foreground.
+  ///
+  /// El handler de background (cuando la app está cerrada) requiere
+  /// un `@pragma('vm:entry-point')` en una función top-level, y se
+  /// implementa en el bloque de onboarding. Aquí solo cubrimos
+  /// foreground: cuando la app está abierta, FCM no muestra
+  /// notificación automáticamente, así que la mostramos nosotros
+  /// después de descifrar.
   Future<void> setupFcmHandlers({
     required void Function(RemoteMessage) onForeground,
   }) async {
-    // Foreground: FCM no muestra notificación automáticamente. La
-    // mostramos nosotros después de descifrar.
     FirebaseMessaging.onMessage.listen(onForeground);
-
-    // Background: Android muestra la notificación automáticamente si
-    // el mensaje tiene `notification` configurado. Si no, no se
-    // muestra. En nuestro caso, el push solo lleva `data`, así que
-    // la notificación se muestra cuando la app se abre.
-    // Para mostrar notificación en background, necesitaríamos un
-    // handler aislado (background message handler) que escribe en
-    // flutter_local_notifications. Lo dejamos para la tanda 3c
-    // (Double Ratchet) o para el bloque de UI.
   }
 
   Future<void> cancelAll() => _local.cancelAll();
