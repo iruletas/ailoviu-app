@@ -8,12 +8,6 @@ import '../widgets/tonal_back_button.dart';
 import 'pin_pad.dart';
 
 /// Pantalla de creación de PIN fallback.
-///
-/// Flujo:
-/// 1. `create`: pide un PIN de 4 dígitos.
-/// 2. `confirm`: pide el mismo PIN otra vez.
-/// 3. Si coincide → guarda hash, marca el flag, hace pop con `true`.
-/// 4. Si no coincide → error banner + vuelve al paso `create`.
 class PinSetupScreen extends ConsumerStatefulWidget {
   const PinSetupScreen({super.key});
 
@@ -57,7 +51,6 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
         _saving = false;
         _success = true;
       });
-      // Pequeña pausa para que se vea el check antes de salir.
       await Future<void>.delayed(const Duration(milliseconds: 380));
       if (!mounted) return true;
       Navigator.of(context).pop(true);
@@ -166,19 +159,19 @@ class _StepBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isCreate = step == 'create';
-    final bg = isCreate
-        ? scheme.primaryContainer
-        : scheme.tertiaryContainer;
+    final bg =
+        isCreate ? scheme.primaryContainer : scheme.tertiaryContainer;
     final fg = isCreate
         ? scheme.onPrimaryContainer
         : scheme.onTertiaryContainer;
-    final label = isCreate ? '1 de 2 · Elige tu PIN' : '2 de 2 · Confirma tu PIN';
+    final label =
+        isCreate ? '1 de 2 · Elige tu PIN' : '2 de 2 · Confirma tu PIN';
     final icon = isCreate ? Icons.pin_outlined : Icons.password_rounded;
 
     return Center(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 260),
-        curve: Curves.backOut,
+        curve: Curves.easeOutBack,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: bg,
