@@ -1,21 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- ── Auth biométrica ──────────────────────────────────────── -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission
         android:name="android.permission.USE_FINGERPRINT"
         android:maxSdkVersion="27"/>
 
-    <!-- ── Red (Firebase, FCM) ─────────────────────────────────── -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- ── Foreground service (opcional, sync en background) ──── -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
-    <!-- ── Juegos en persona (Nearby Connections) ─────────────── -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30"/>
@@ -66,7 +62,6 @@
             android:foregroundServiceType="dataSync"/>
         -->
 
-        <!-- ── FCM: canal por defecto ───────────────────────────── -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="ailoviu_messages"/>
