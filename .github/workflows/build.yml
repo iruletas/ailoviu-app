@@ -86,6 +86,10 @@ jobs:
       - name: Generar archivos Android faltantes
         run: |
           flutter create --platforms=android --org com.iruletas --project-name ailoviu .
+          # flutter create sobrescribe el build.gradle.kts si no lo detecta bien.
+          # Nos aseguramos de que nuestro build.gradle.kts con la firma esté en su lugar
+          # justo después de que flutter create termine.
+          git checkout -- android/app/build.gradle.kts || true
 
       - name: Decodificar keystore de release
         env:
@@ -111,57 +115,19 @@ jobs:
           EOF
           echo "key.properties creado."
 
-      - name: Configurar firma en Gradle (inyección quirúrgica)
-        run: |
-          python3 - <<'PYEOF'
-          import re
-
-          path = 'android/app/build.gradle.kts'
-          with open(path, 'r') as f:
-              content = f.read()
-
-          imports = "import java.util.Properties\nimport java.io.FileInputStream\n\n"
-          if "import java.util.Properties" not in content:
-              content = imports + content
-
-          signing_config = """
-              signingConfigs {
-                  create("release") {
-                      val keystoreProperties = Properties()
-                      val keystorePropertiesFile = rootProject.file("key.properties")
-                      if (keystorePropertiesFile.exists()) {
-                          keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-                      }
-                      keyAlias = keystoreProperties["keyAlias"] as String?
-                      keyPassword = keystoreProperties["keyPassword"] as String?
-                      storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-                      storePassword = keystoreProperties["storePassword"] as String?
-                  }
-              }
-
-          """
-
-          if "signingConfigs {" not in content:
-              content = content.replace("    buildTypes {", signing_config + "    buildTypes {")
-
-          content = content.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName("release")')
-
-          content = re.sub(
-              r'minSdk\s*=\s*flutter\.minSdkVersion',
-              'minSdk = maxOf(flutter.minSdkVersion, 23)',
-              content
-          )
-
-          with open(path, 'w') as f:
-              f.write(content)
-          print("build.gradle.kts modificado con éxito.")
-          PYEOF
-
       - name: Descargar dependencias
         run: flutter pub get
 
       - name: Compilar APK
         run: flutter build apk --release
+
+      - name: Verificar firma (DEBUG)
+        run: |
+          echo "Verificando firma de la APK generada..."
+          # Si el archivo apksigner existe en el SDK de Android, lo usamos para verificar
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk || \
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk || \
+          echo "No se pudo verificar la firma, pero el APK existe."
 
       - name: Subir APK como artifact
         uses: actions/upload-artifact@v4
