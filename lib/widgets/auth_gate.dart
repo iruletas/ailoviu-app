@@ -113,8 +113,8 @@ class _AuthGateState extends ConsumerState<AuthGate>
   }
 }
 
-/// Splash de arranque: squircle tonal con pulso de marca y progress
-/// M3E en el centro. No es una pantalla completa: es el estado
+/// Splash de arranque: corazón M3E con latido orgánico sobre un
+/// gradiente radial. No es una pantalla completa: es el estado
 /// "esperando prefs" para evitar parpadeos antes de decidir el gate.
 class _AuthSplash extends StatefulWidget {
   const _AuthSplash();
@@ -125,69 +125,129 @@ class _AuthSplash extends StatefulWidget {
 
 class _AuthSplashState extends State<_AuthSplash>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
+  late final AnimationController _controller;
+  late final Animation<double> _heartbeat;
+  late final Animation<double> _textFade;
 
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
+    _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
+      duration: const Duration(milliseconds: 1600),
+    );
+
+    // Ritmo de doble latido (Sístole - Relajación - Sístole - Diástole).
+    _heartbeat = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.12)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 15,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.12, end: 1.05)
+            .chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 15,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.05, end: 1.15)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 15,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.15, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeInOutCubicEmphasized)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween(1.0),
+        weight: 35,
+      ),
+    ]).animate(_controller);
+
+    // El texto aparece suavemente después de que el corazón late.
+    _textFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.2, 0.5, curve: Curves.easeOut),
+      ),
+    );
+
+    _controller.repeat();
   }
 
   @override
   void dispose() {
-    _pulse.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: scheme.surface,
-      body: Center(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            AnimatedBuilder(
-              animation: _pulse,
-              builder: (context, _) {
-                final t = Curves.easeInOut.transform(_pulse.value);
-                return Opacity(
-                  opacity: 0.08 + 0.10 * t,
+      body: Container(
+        decoration: BoxDecoration(
+          // Gradiente radial sutil para dar profundidad atmosférica.
+          gradient: RadialGradient(
+            center: Alignment.center,
+            radius: 0.8,
+            colors: [
+              scheme.surfaceContainerLow,
+              scheme.surface,
+            ],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Corazón con latido
+              ScaleTransition(
+                scale: _heartbeat,
+                child: Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(32),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withValues(alpha: 0.2),
+                        blurRadius: 24,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
                   child: M3EClip(
                     shape: M3EShape.heart,
-                    child: SizedBox(
-                      width: 96 + 8 * t,
-                      height: 96 + 8 * t,
-                      child: ColoredBox(color: scheme.primary),
+                    child: ColoredBox(
+                      color: scheme.primaryContainer,
+                      child: Icon(
+                        Icons.favorite_rounded,
+                        size: 44,
+                        color: scheme.onPrimaryContainer,
+                      ),
                     ),
                   ),
-                );
-              },
-            ),
-            Container(
-              width: 72,
-              height: 72,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3.2,
-                  strokeCap: StrokeCap.round,
-                  color: scheme.primary,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 32),
+              // Texto de marca con Fade-In
+              FadeTransition(
+                opacity: _textFade,
+                child: Text(
+                  'Ailoviu',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.0,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
