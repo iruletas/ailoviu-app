@@ -124,7 +124,7 @@ otra parte.
 **Qué:** `home_screen.dart` es un placeholder. Debe componerse de
 hero de relación + días juntos + estados + una acción única.
 
-**Por qué no hoy:** Bloque B.
+**Por qué no hoy:** Bloque C.
 
 **Dónde vivirá:** `lib/screens/home_screen.dart`.
 
@@ -182,6 +182,24 @@ long-press de la pill de ajustes en `main_shell.dart`.
 
 ---
 
+## 15. Push real (FCM) y Cloud Functions
+**Qué:** El `push_service.dart` solo registra el token, pero el envío
+del push cuando llega un mensaje requiere una Cloud Function o un
+servidor. Como usamos el servicio en primer plano
+(`flutter_foreground_task`), las notificaciones ya llegan con la app
+cerrada sin necesidad de FCM. Si queremos notificaciones cuando el
+servicio esté apagado (o en iOS), necesitaremos desplegar la Cloud
+Function.
+
+**Por qué no hoy:** el servicio en primer plano cubre el caso de uso
+y evita configurar Cloud Functions (que requieren plan Blaze de
+Firebase).
+
+**Dónde vivirá:** `functions/index.js` + instrucciones en el
+onboarding.
+
+---
+
 ## Notas (no son ítems, son avisos para no tropezar)
 
 ### Warning de KGP en `package_info_plus`
@@ -202,9 +220,10 @@ r28c (`Archive is not a ZIP archive`). Es transitorio del runner.
 **Solución: re-lanzar el workflow.**
 
 ### Versionado
-Desde 2026-10-28, `pubspec.yaml` se actualiza **a mano al cierre de
-cada bloque**. El workflow solo verifica que exista `version:` y
-compila. No hay auto-versionado por `run_number`.
+Desde 2026-10-28, se volvió al auto-versionado `0.1.{run_number}`
+porque el flujo manual es más molesto para el desarrollador.
+`pubspec.yaml` en el repo dice `0.1.0+1`, pero el workflow lo
+sobrescribe antes de compilar.
 
 ### Imports de tipos devueltos por providers
 Cuando uses `ref.read(provider.future)` o `ref.watch(provider)` y
@@ -212,3 +231,10 @@ vayas a llamar métodos sobre el resultado, **importa el archivo del
 tipo**. Sin el import, Dart cae a `Object?` y los métodos no
 resuelven. (Aprendido con `AuthSession` en `auth_gate.dart` y con
 `AuthService` en `security_screen.dart`).
+
+### Firma de APK en Android
+Si Android dice "paquete no válido", es casi seguro que la app
+instalada tiene una firma distinta (de debug, o de un keystore viejo).
+Solución: desinstalar la versión vieja y volver a instalar. Las
+actualizaciones futuras (con el mismo keystore) ya no pedirán
+desinstalar.
