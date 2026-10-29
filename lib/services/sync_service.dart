@@ -19,6 +19,19 @@ import 'transport_config.dart';
 /// - Maneja la reconexión.
 /// - No sabe de transportes concretos (habla con [SyncTransport]).
 /// - No sabe de criptografía concreta (habla con [CryptoService]).
+///
+/// Entrega de sobres entrantes:
+/// 1. Se procesan de uno en uno y en orden.
+/// 2. Un sobre solo se confirma al transporte (y se borra del buzón)
+///    cuando ya se entregó a [events] o se guardó en la cola interna
+///    hasta que alguien escuche. Un fallo temporal no lo pierde.
+/// 3. Los sobres inválidos, expirados o ilegibles se descartan: no
+///    tienen arreglo y atascarían el buzón.
+/// 4. Se deduplica por id (el transporte puede reentregar).
+///
+/// Ojo: la cola interna vive en memoria. Cuando existan las features
+/// que persisten mensajes (Bloque C), lo ideal es confirmar después de
+/// persistir, no antes.
 class SyncService {
   SyncService({
     required KeyStore keyStore,
@@ -33,11 +46,21 @@ class SyncService {
   final NotificationService _notifications;
 
   final _uuid = const Uuid();
-  final _eventsController = StreamController<SyncEvent>.broadcast();
+
+  late final StreamController<SyncEvent> _eventsController =
+      StreamController<SyncEvent>.broadcast(onListen: _onFirstListener);
   final _statusController = StreamController<SyncStatus>.broadcast();
 
+  /// Eventos que llegaron cuando nadie escuchaba [events].
+  final List<SyncEvent> _pending = <SyncEvent>[];
+  static const int _maxPending = 500;
+
+  /// ids ya procesados (los más recientes). Orden de inserción.
+  final Set<String> _seen = <String>{};
+  static const int _maxSeen = 500;
+
   SyncTransport? _transport;
-  StreamSubscription<SyncEnvelope>? _incomingSub;
+  StreamSubscription<void>? _incomingSub;
   StreamSubscription<TransportStatus>? _statusSub;
 
   Uint8List? _sharedSecret;
@@ -91,7 +114,14 @@ class SyncService {
         'deviceId': _deviceId,
         ...config.toJson(),
       });
-      _incomingSub = _transport!.incoming.listen(_handleIncoming);
+
+      // Los streams del transporte son de una sola suscripción y
+      // bufferean: lo que llegó durante initialize() se entrega aquí.
+      // asyncMap procesa un sobre a la vez, en orden.
+      _incomingSub = _transport!.incoming
+          .asyncMap<void>(_handleIncoming)
+          .listen((_) {});
+
       _statusSub = _transport!.status.listen((s) {
         switch (s) {
           case TransportStatus.connected:
@@ -114,6 +144,9 @@ class SyncService {
   }
 
   /// Encola un payload para envío. Devuelve el id del sobre.
+  ///
+  /// Lanza [StateError] si no hay sync listo o si el transporte
+  /// rechazó el envío, para que quien llama pueda reintentar o avisar.
   Future<String> enqueue({
     required SyncType type,
     required Map<String, dynamic> payload,
@@ -164,7 +197,12 @@ class SyncService {
       replyTo: replyTo,
     );
 
-    await transport.send(envelope);
+    final result = await transport.send(envelope);
+    if (!result.accepted) {
+      throw StateError(
+        'No se pudo enviar el sobre: ${result.error ?? 'error desconocido'}',
+      );
+    }
     return id;
   }
 
@@ -176,62 +214,142 @@ class SyncService {
     );
   }
 
+  // ── Recepción ───────────────────────────────────────────────────
+
   Future<void> _handleIncoming(SyncEnvelope envelope) async {
+    final transport = _transport;
     final secret = _sharedSecret;
-    if (secret == null) return;
+    if (transport == null || secret == null) return;
 
-    final valid = _crypto.verifyEnvelope(
-      sharedSecret: secret,
-      v: envelope.v.toString(),
-      id: envelope.id,
-      from: envelope.from,
-      to: envelope.to,
-      type: envelope.type.name,
-      createdAt: envelope.createdAt.toString(),
-      nonce: envelope.nonce,
-      ciphertext: envelope.ciphertext,
-      signature: envelope.signature,
-    );
-    if (!valid) return;
-
-    if (envelope.isExpired()) return;
-
-    Map<String, dynamic> payload;
+    SyncEvent? delivered;
     try {
-      payload = await _crypto.decrypt(
+      // Reentrega de algo ya procesado: solo confirmar.
+      if (_seen.contains(envelope.id)) {
+        await transport.acknowledge(envelope.id);
+        return;
+      }
+
+      final event = await _decode(envelope, secret);
+      if (event == null) {
+        // Inválido, expirado o ilegible: no tiene arreglo. Se
+        // descarta para no atascar el buzón.
+        await transport.acknowledge(envelope.id);
+        return;
+      }
+
+      if (!_deliver(event)) {
+        // Cola interna llena: se deja en el buzón (no se confirma).
+        return;
+      }
+
+      _markSeen(envelope.id);
+      await transport.acknowledge(envelope.id);
+      delivered = event;
+    } catch (_) {
+      // Fallo inesperado: NO se confirma, el sobre sigue en el buzón.
+      return;
+    }
+
+    await _notifyIfNeeded(delivered);
+  }
+
+  /// Verifica, revisa TTL y descifra. `null` = descartar.
+  Future<SyncEvent?> _decode(
+    SyncEnvelope envelope,
+    Uint8List secret,
+  ) async {
+    try {
+      final valid = _crypto.verifyEnvelope(
+        sharedSecret: secret,
+        v: envelope.v.toString(),
+        id: envelope.id,
+        from: envelope.from,
+        to: envelope.to,
+        type: envelope.type.name,
+        createdAt: envelope.createdAt.toString(),
+        nonce: envelope.nonce,
+        ciphertext: envelope.ciphertext,
+        signature: envelope.signature,
+      );
+      if (!valid) return null;
+
+      if (envelope.isExpired()) return null;
+
+      final payload = await _crypto.decrypt(
         sharedSecret: secret,
         ciphertextBase64: envelope.ciphertext,
         nonceBase64: envelope.nonce,
       );
-    } on CryptoException {
-      return;
+
+      return SyncEvent(
+        envelope: envelope,
+        payload: SyncPayload(
+          type: envelope.type,
+          data: payload,
+          replyTo: envelope.replyTo,
+          receivedAt: DateTime.now(),
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Entrega el evento a quien escuche, o lo guarda en la cola
+  /// interna. Devuelve `false` si no hay lugar para guardarlo.
+  bool _deliver(SyncEvent event) {
+    if (_eventsController.isClosed) return false;
+
+    if (_eventsController.hasListener) {
+      _flushPending(); // primero lo acumulado, para conservar el orden
+      _eventsController.add(event);
+      return true;
     }
 
-    final syncPayload = SyncPayload(
-      type: envelope.type,
-      data: payload,
-      replyTo: envelope.replyTo,
-      receivedAt: DateTime.now(),
-    );
+    if (_pending.length >= _maxPending) return false;
+    _pending.add(event);
+    return true;
+  }
 
-    _eventsController.add(
-      SyncEvent(envelope: envelope, payload: syncPayload),
-    );
+  void _onFirstListener() {
+    // Microtask: asegura que la suscripción ya quedó registrada.
+    scheduleMicrotask(_flushPending);
+  }
 
-    if (envelope.type == SyncType.message ||
-        envelope.type == SyncType.state) {
-      final title = envelope.type == SyncType.message
-          ? 'Nuevo mensaje'
-          : 'Nuevo estado';
-      final body = payload['preview'] as String? ?? 'Toca para ver';
+  void _flushPending() {
+    while (_pending.isNotEmpty &&
+        !_eventsController.isClosed &&
+        _eventsController.hasListener) {
+      _eventsController.add(_pending.removeAt(0));
+    }
+  }
+
+  void _markSeen(String id) {
+    _seen.add(id);
+    if (_seen.length > _maxSeen) {
+      _seen.remove(_seen.first);
+    }
+  }
+
+  Future<void> _notifyIfNeeded(SyncEvent event) async {
+    final type = event.envelope.type;
+    if (type != SyncType.message && type != SyncType.state) return;
+    try {
+      final title =
+          type == SyncType.message ? 'Nuevo mensaje' : 'Nuevo estado';
+      final body = event.payload.data['preview'] as String? ?? 'Toca para ver';
       await _notifications.show(title: title, body: body);
+    } catch (_) {
+      // Una notificación fallida no debe afectar la entrega.
     }
   }
 
   void _setStatus(SyncStatus status) {
     if (_status == status) return;
     _status = status;
-    _statusController.add(status);
+    if (!_statusController.isClosed) {
+      _statusController.add(status);
+    }
   }
 
   /// Cierra el servicio.
@@ -239,6 +357,7 @@ class SyncService {
     await _incomingSub?.cancel();
     await _statusSub?.cancel();
     await _transport?.dispose();
+    _pending.clear();
     await _eventsController.close();
     await _statusController.close();
   }
