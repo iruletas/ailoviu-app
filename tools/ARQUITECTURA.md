@@ -16,12 +16,19 @@ discute explícitamente antes de romperla.
 - Flutter 3.47.7 · Dart 3.13.x
 - Material 3 Expressive
 - Estado: `flutter_riverpod` 2.x (StateNotifier, sin codegen)
-- Persistencia: `shared_preferences` 2.x
+- Persistencia local: `shared_preferences` 2.x
+- Cifrado local: `flutter_secure_storage` 9.x (Keystore Android)
 - Info del bundle: `package_info_plus` 8.x
 - Auth del dispositivo: `local_auth` 2.x (huella, PIN o patrón)
 - Hashing local: `crypto` 3.x (SHA-256 para PIN fallback)
 - Formas M3E: `m3e_shapes` (paquete local en `packages/`)
 - Progreso M3E: `m3e_progress` (paquete local, aún sin integrar)
+- Sync: `firebase_core`, `firebase_database`, `firebase_messaging`, `firebase_storage`
+- Criptografía E2EE: `cryptography` 2.x (X25519, AES-GCM, HKDF)
+- Utilidades: `uuid`, `collection`
+- Servicio en segundo plano: `flutter_foreground_task` 11.x
+- Emparejamiento y share: `qr_flutter`, `mobile_scanner`, `share_plus`
+- Juegos locales: `nearby_connections` 4.x
 - CI/CD: GitHub Actions · ubuntu-24.04 · Java 17
 - Firma: keystore `.jks` inyectado por Base64 en Secrets
 - Versionado: **manual al cierre de sesión** (ver regla 11)
@@ -42,7 +49,8 @@ lib/
 ├── services/              ← lógica sin estado, sin UI
 ├── providers/             ← estado global (Riverpod)
 ├── screens/               ← pantallas
-└── widgets/               ← widgets reutilizables (ver regla 4)
+├── widgets/               ← widgets reutilizables (ver regla 4)
+└── games/                 ← dominio de juegos (contratos y lógica)
 
 ```
 
@@ -62,6 +70,7 @@ Un archivo se ubica según **el sufijo de su nombre**, sin excepciones:
 **Sin sufijo reconocible** → se evalúa caso por caso:
 - `main.dart`, `app.dart` → raíz de `lib/`.
 - `app_theme.dart`, `seed_palette.dart` → `lib/core/`.
+- `game_definition.dart`, `game_session.dart` → `lib/games/` (son dominio, no caben en core).
 - Si dudas, **no va a `core/`** (regla 3 sigue aplicando).
 
 **Consecuencias duras:**
@@ -107,6 +116,7 @@ no encajan en ninguna otra capa. Proveedores de Riverpod **no** van en
 **Sí va en `core/`:**
 - `app_theme.dart` (construcción del `ThemeData`)
 - `seed_palette.dart` (constantes de color)
+- `secure_store.dart` (wrapper de `flutter_secure_storage`)
 
 **No va en `core/`:**
 - Modelos de dominio → `models/`
@@ -114,6 +124,7 @@ no encajan en ninguna otra capa. Proveedores de Riverpod **no** van en
 - Services → `services/`
 - Pantallas → `screens/`
 - Widgets → `widgets/`
+- Contratos de juegos → `games/`
 
 `core/` **no es un basurero**. Si dudas, no va en `core/`.
 
@@ -205,16 +216,16 @@ service.clearAppPin().
 9. Regla de idioma (UI)
 
 · Sentence case en toda la UI: "Datos de la relación", no "Datos
-  De La Relación".
+De La Relación".
 · Español mexicano o neutro. Evitar castellanismos:
-  · "agrega" (no "añade")
-  · "elimina" (no "borra")
-  · "celular" (no "móvil")
-  · "computadora" (no "ordenador")
-  · "archivo" (no "fichero")
-  · "presionar/tocar" (no "pulsar")
-  · "ustedes" (no "vosotros")
-  · "elegir/seleccionar" (no "coger")
+· "agrega" (no "añade")
+· "elimina" (no "borra")
+· "celular" (no "móvil")
+· "computadora" (no "ordenador")
+· "archivo" (no "fichero")
+· "presionar/tocar" (no "pulsar")
+· "ustedes" (no "vosotros")
+· "elegir/seleccionar" (no "coger")
 · Tildes correctas: "Hétero" (no "Hetero").
 · "Relación" en UI, nunca "pareja".
 · "Poliamor" en UI, nunca "Trio" ni "Trieja".
@@ -236,17 +247,17 @@ de builds.
 11. Regla de versionado
 
 · pubspec.yaml del repo se actualiza a mano al cierre de cada
-  bloque, en el mismo commit que los MD y la pubspec.
+bloque, en el mismo commit que los MD y la pubspec.
 · No se usa github.run_number para la versión: cuenta fallos de
-  CI y reintentos, y dispara la versión sin cambios reales en el
-  código.
+CI y reintentos, y dispara la versión sin cambios reales en el
+código.
 · build.yml no auto-versiona. Solo verifica que pubspec.yaml
-  tenga una version: válida (grep) y compila.
+tenga una version: válida (grep) y compila.
 · Convención de la versión: MAJOR.MINOR.PATCH+BUILD.
-  · Al cerrar un bloque: sube MINOR (0.1.x → 0.2.0).
-  · +BUILD es informativo, puede ser +1 o el consecutivo.
+· Al cerrar un bloque: sube MINOR (0.1.x → 0.2.0).
+· +BUILD es informativo, puede ser +1 o el consecutivo.
 · La app lee su versión real desde package_info_plus, nunca
-  hardcodeada.
+hardcodeada.
 · No hay commits automáticos desde CI.
 
 ---
@@ -262,14 +273,18 @@ Antes de agregar un paquete de pub.dev:
 Si las 3 respuestas son "no" → se agrega.
 
 Paquetes aprobados hoy: shared_preferences, flutter_riverpod,
-package_info_plus, local_auth, crypto, m3e_shapes (local),
-m3e_progress (local), androidx_graphics_shapes (transitivo).
+package_info_plus, local_auth, crypto, flutter_secure_storage,
+firebase_core, firebase_database, firebase_messaging, firebase_storage,
+cryptography, uuid, collection, flutter_local_notifications,
+flutter_foreground_task, qr_flutter, mobile_scanner, share_plus,
+nearby_connections, m3e_shapes (local), m3e_progress (local),
+androidx_graphics_shapes (transitivo).
 
 Paquetes descartados explícitamente:
 
 · animations: se resuelve con PageRouteBuilder casero.
-· flutter_secure_storage: pendiente de evaluar si SecureStore se
-  queda como wrapper de SharedPreferences. No se agrega hoy.
+· libsignal_protocol_dart: se descartó por falta de mantenimiento. Se
+usa cryptography para hacer X25519 + AES-GCM estático.
 
 ---
 
@@ -284,23 +299,42 @@ core/navigation.dart como helper openOrganic(context, screen).
 
 ---
 
-14. Regla de auth (nueva)
+14. Regla de auth
 
 · Método principal: local_auth del sistema operativo. El sistema
-  muestra los métodos que el usuario tenga configurados (huella,
-  PIN, patrón, contraseña). La app no decide, solo invoca.
+muestra los métodos que el usuario tenga configurados (huella,
+PIN, patrón, contraseña). La app no decide, solo invoca.
 · Fallback: PIN propio de la app, solo cuando el dispositivo
-  no tiene bloqueo de pantalla. No se ofrece PIN si el sistema ya
-  tiene un método.
+no tiene bloqueo de pantalla. No se ofrece PIN si el sistema ya
+tiene un método.
 · App-lock y feature-lock son independientes. App-lock pide auth
-  al abrir y respeta un timeout de background (opcional, configurable,
-  default null = nunca re-bloquea). Feature-lock pide auth al entrar
-  a una sección privada y no tiene timeout: al salir se re-bloquea.
+al abrir y respeta un timeout de background (opcional, configurable,
+default null = nunca re-bloquea). Feature-lock pide auth al entrar
+a una sección privada y no tiene timeout: al salir se re-bloquea.
 · Sin métodos configurados + bloqueo activo es un estado
-  inconsistente: la UI debe mostrar CTA explícito "Configurar PIN".
+inconsistente: la UI debe mostrar CTA explícito "Configurar PIN".
 · AuthGate es app-level. Para features privadas se usará un
-  FeatureGate (aún no existe; se creará cuando la primera feature
-  privada aterrice).
+FeatureGate (aún no existe; se creará cuando la primera feature
+privada aterrice).
+· Las claves (PIN hash, salt, secretos del ratchet) viven en
+KeyStore (Keystore Android), no en SharedPreferences.
+
+---
+
+15. Regla de Sync y Criptografía
+
+· El transporte por defecto es Firebase Realtime Database. Cada pareja
+configura su propio proyecto de Firebase (trae su google-services.json
+y lo importa en la app). El repo no contiene credenciales.
+· La app funciona local-only si no hay transporte configurado.
+· La criptografía es E2EE usando X25519 para derivar el secreto
+compartido (X3DH simplificado) y AES-GCM para el contenido. Se
+descartó implementar Double Ratchet a mano por la complejidad y
+riesgo de bugs. El secreto es estático y se guarda en KeyStore.
+· El transporte (Firebase) solo ve blobs cifrados.
+· El servicio en segundo plano (flutter_foreground_task) mantiene
+la conexión y las notificaciones con la app cerrada. Es de tipo
+remoteMessaging para esquivar el límite de 6h de Android 15.
 
 ---
 
@@ -322,3 +356,5 @@ Resumen para un agente nuevo
    pantalla. App-lock y feature-lock independientes.
 10. Idioma: español mexicano/neutro, sentence case, "Relación" no
     "pareja", "Poliamor" no "Trio", "Hétero" con tilde.
+11. Sync: Firebase + E2EE estático (X25519 + AES-GCM). Sin servidor
+    propio, cada pareja trae su Firebase. Sin Double Ratchet.
