@@ -71,10 +71,12 @@ class FirebaseTransport implements SyncTransport {
     // instancia. Si ya se usó, lanza: seguimos sin persistencia.
     try {
       db.setPersistenceEnabled(true);
-      _persistenceOn = true;
     } catch (_) {
-      _persistenceOn = false;
+      // Lanza si la instancia ya se usó: el otro aislado (servicio en
+      // segundo plano o app) ya la inicializó con persistencia, porque
+      // todo nuestro código la activa antes de cualquier otro uso.
     }
+    _persistenceOn = true;
 
     _db = db;
 
