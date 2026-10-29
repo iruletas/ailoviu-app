@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'settings_components.dart';
-
 /// Tarjeta "Días juntos" para Hogar.
 ///
 /// - Gradiente tonal suave entre primaryContainer y tertiaryContainer.
 /// - Squircle con latido doble del corazón.
-/// - Cifra de días grande (displayMedium, w900) cuando hay fecha.
-/// - Pill chip con años/meses.
+/// - Cifra de días grande (displayMedium, w900) en rosa marcado.
+/// - Pill chip en tono primario rosa.
 /// - Botón "Elegir fecha" cuando no hay fecha.
 /// - Badge festivo si hoy es aniversario o un hito (100, 500, 1000).
 /// - Compresión táctil con háptica.
@@ -81,7 +79,6 @@ class _DaysTogetherCardState extends State<DaysTogetherCard>
 
   void _handleTap() {
     if (widget.onTap == null) return;
-    // Háptica diferenciada si hoy es aniversario.
     final isAnniversary = _isAnniversaryToday(widget.startDate);
     if (isAnniversary) {
       HapticFeedback.mediumImpact();
@@ -104,8 +101,11 @@ class _DaysTogetherCardState extends State<DaysTogetherCard>
       return '🎉 ¡Hoy es el día!';
     }
     final days = now.difference(start).inDays;
-    if (days == 100 || days == 500 || days == 1000 ||
-        days == 1500 || days == 2000) {
+    if (days == 100 ||
+        days == 500 ||
+        days == 1000 ||
+        days == 1500 ||
+        days == 2000) {
       return '✨ ¡$days días!';
     }
     return null;
@@ -162,17 +162,17 @@ class _DaysTogetherCardState extends State<DaysTogetherCard>
               end: Alignment.bottomRight,
               colors: [
                 Color.alphaBlend(
-                  scheme.primaryContainer.withValues(alpha: 0.15),
+                  scheme.primaryContainer.withValues(alpha: 0.28),
                   scheme.surfaceContainerLow,
                 ),
                 Color.alphaBlend(
-                  scheme.tertiaryContainer.withValues(alpha: 0.12),
+                  scheme.primary.withValues(alpha: 0.12),
                   scheme.surfaceContainerLow,
                 ),
               ],
             ),
             border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.3),
+              color: scheme.primary.withValues(alpha: 0.25),
             ),
           ),
           padding: const EdgeInsets.all(16),
@@ -194,7 +194,8 @@ class _DaysTogetherCardState extends State<DaysTogetherCard>
                         boxShadow: isAnniversary
                             ? [
                                 BoxShadow(
-                                  color: scheme.primary.withValues(alpha: 0.4),
+                                  color:
+                                      scheme.primary.withValues(alpha: 0.4),
                                   blurRadius: 16,
                                   spreadRadius: 1,
                                 ),
@@ -287,8 +288,8 @@ class _EmptyDaysState extends StatelessWidget {
           label: const Text('Elegir fecha'),
           style: FilledButton.styleFrom(
             shape: const StadiumBorder(),
-            backgroundColor: scheme.secondaryContainer,
-            foregroundColor: scheme.onSecondaryContainer,
+            backgroundColor: scheme.primaryContainer,
+            foregroundColor: scheme.onPrimaryContainer,
           ),
         ),
       ],
@@ -320,7 +321,10 @@ class _ConfiguredDaysState extends StatelessWidget {
           '$days',
           style: theme.textTheme.displayMedium?.copyWith(
             fontWeight: FontWeight.w900,
-            color: scheme.primary,
+            color: Color.alphaBlend(
+              scheme.primary.withValues(alpha: 0.95),
+              scheme.primaryContainer,
+            ),
             height: 1.0,
             letterSpacing: -1.5,
           ),
@@ -329,13 +333,13 @@ class _ConfiguredDaysState extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: scheme.secondaryContainer,
+            color: scheme.primaryContainer,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
             chipLabel,
             style: theme.textTheme.labelMedium?.copyWith(
-              color: scheme.onSecondaryContainer,
+              color: scheme.onPrimaryContainer,
               fontWeight: FontWeight.w700,
             ),
           ),
