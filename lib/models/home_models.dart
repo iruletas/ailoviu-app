@@ -90,6 +90,51 @@ class PartnerLocation {
       );
 }
 
+/// Snapshot de todas las ubicaciones conocidas, indexadas por deviceId.
+///
+/// El mapa de Hogar itera sobre [all] para dibujar avatares y líneas.
+/// Soporta 2, 3 o 4 miembros sin cambios en el widget.
+@immutable
+class LocationsSnapshot {
+  /// Mapa `deviceId -> PartnerLocation`.
+  final Map<String, PartnerLocation> all;
+
+  /// deviceId del dispositivo local. Sirve para pintar mi avatar
+  /// distinto (o para el badge "＋" de mi estado).
+  final String myDeviceId;
+
+  const LocationsSnapshot({
+    this.all = const {},
+    required this.myDeviceId,
+  });
+
+  /// Mi ubicación, si está disponible.
+  PartnerLocation? get mine => all[myDeviceId];
+
+  /// Ubicaciones de los demás miembros (sin la mía).
+  List<PartnerLocation> get others =>
+      all.entries.where((e) => e.key != myDeviceId).map((e) => e.value).toList();
+
+  /// Todas las ubicaciones, incluida la mía.
+  List<PartnerLocation> get everyone => all.values.toList();
+
+  /// `true` si hay al menos 2 ubicaciones (para dibujar alguna línea).
+  bool get canDrawLines => all.length >= 2;
+
+  /// `true` si hay al menos 1 ubicación (para centrar el mapa).
+  bool get hasAny => all.isNotEmpty;
+
+  LocationsSnapshot copyWith({
+    Map<String, PartnerLocation>? all,
+    String? myDeviceId,
+  }) {
+    return LocationsSnapshot(
+      all: all ?? this.all,
+      myDeviceId: myDeviceId ?? this.myDeviceId,
+    );
+  }
+}
+
 /// Estado del buzz (zumbido) en el dispositivo local.
 ///
 /// Cooldown de 30s entre buzzes, máximo 50 por día. Se resetea a
