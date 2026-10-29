@@ -5,11 +5,12 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 ///
 /// - Inicializa `flutter_local_notifications` con el canal por
 ///   defecto.
-/// - Escucha mensajes FCM en foreground y muestra la notificación
-///   local cuando llega un sobre.
+/// - Muestra la notificación local cuando llega un sobre (ya
+///   descifrado). La usa tanto la app como el servicio en segundo
+///   plano (otro aislado), por eso el id de cada notificación se
+///   deriva del id del sobre: si ambos la muestran, la segunda
+///   REEMPLAZA a la primera en vez de duplicarla.
 /// - El push de FCM no lleva contenido: solo la referencia al sobre.
-///   El contenido se lee cifrado de Firebase, se descifra, y se
-///   muestra.
 class NotificationService {
   NotificationService();
 
@@ -21,7 +22,20 @@ class NotificationService {
   static const _channelDescription =
       'Notificaciones de mensajes, estados y zumbidos';
 
-  Future<void> initialize() async {
+  /// Id de notificación estable (FNV-1a 32 bits) a partir de un texto,
+  /// p. ej. el id de un sobre. Igual en cualquier aislado y arranque.
+  static int stableId(String key) {
+    var hash = 0x811c9dc5;
+    for (final unit in key.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xFFFFFFFF;
+    }
+    return hash & 0x7FFFFFFF;
+  }
+
+  /// [requestPermission] debe ser `false` fuera de la app (servicio en
+  /// segundo plano): ahí no hay Activity para mostrar el diálogo.
+  Future<void> initialize({bool requestPermission = true}) async {
     if (_initialized) return;
 
     const androidSettings =
@@ -41,19 +55,25 @@ class NotificationService {
       ),
     );
 
-    await androidPlugin?.requestNotificationsPermission();
+    if (requestPermission) {
+      await androidPlugin?.requestNotificationsPermission();
+    }
 
     _initialized = true;
   }
 
   /// Muestra una notificación local con el contenido ya descifrado.
+  ///
+  /// Con [id] repetido, reemplaza la notificación anterior sin volver
+  /// a sonar. En la pantalla de bloqueo oculta el contenido.
   Future<void> show({
     required String title,
     required String body,
     String? payload,
+    int? id,
   }) async {
     await _local.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      id ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
       body,
       const NotificationDetails(
@@ -63,6 +83,8 @@ class NotificationService {
           channelDescription: _channelDescription,
           importance: Importance.high,
           priority: Priority.high,
+          onlyAlertOnce: true,
+          visibility: NotificationVisibility.private,
         ),
       ),
       payload: payload,
@@ -71,17 +93,15 @@ class NotificationService {
 
   /// Configura el handler de FCM en foreground.
   ///
-  /// El handler de background (cuando la app está cerrada) requiere
-  /// un `@pragma('vm:entry-point')` en una función top-level, y se
-  /// implementa en el bloque de onboarding. Aquí solo cubrimos
-  /// foreground: cuando la app está abierta, FCM no muestra
-  /// notificación automáticamente, así que la mostramos nosotros
-  /// después de descifrar.
+  /// (Sin uso mientras no haya Cloud Function que mande push; la
+  /// entrega con la app cerrada la hace el servicio en primer plano.)
   Future<void> setupFcmHandlers({
     required void Function(RemoteMessage) onForeground,
   }) async {
     FirebaseMessaging.onMessage.listen(onForeground);
   }
+
+  Future<void> cancel(int id) => _local.cancel(id);
 
   Future<void> cancelAll() => _local.cancelAll();
 }
