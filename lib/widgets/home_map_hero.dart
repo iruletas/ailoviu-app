@@ -13,14 +13,6 @@ import '../providers/relationship_providers.dart';
 import '../services/location_service.dart';
 
 /// Mapa hero de Hogar.
-///
-/// - Fondo: OSM con tinte suave.
-/// - Un avatar por miembro en squircle.
-/// - Línea entre cada par de avatares.
-/// - Badge "＋" en mi avatar para editar mi estado.
-/// - Pill flotante de cristal con la distancia total.
-/// - Empty state con CTA que pide permiso y comparte ubicación.
-/// - Compresión táctil del contenedor completo.
 class HomeMapHero extends ConsumerStatefulWidget {
   const HomeMapHero({
     super.key,
@@ -52,28 +44,58 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     setState(() => _requestingLocation = true);
 
     try {
-      final granted = await _locationService.requestPermission();
-      if (!granted || !mounted) {
-        _showMessage('Permiso de ubicación denegado');
-        return;
+      // 1. Permisos + servicio del sistema.
+      final permission = await _locationService.ensurePermission();
+
+      switch (permission) {
+        case LocationResult.serviceDisabled:
+          _showLocationServiceDialog();
+          return;
+        case LocationResult.permissionDeniedForever:
+          _showPermissionForeverDialog();
+          return;
+        case LocationResult.permissionDenied:
+          _showMessage('Permiso de ubicación denegado');
+          return;
+        case LocationResult.success:
+          break;
+        default:
+          _showMessage('No se pudo obtener el permiso');
+          return;
       }
 
+      if (!mounted) return;
+
+      // 2. deviceId.
       final deviceId = ref.read(myDeviceIdProvider).valueOrNull ?? '';
       if (deviceId.isEmpty) {
         _showMessage('Espera a que la app termine de inicializar');
         return;
       }
 
-      final loc = await _locationService.getCurrentLocation(
+      // 3. Ubicación.
+      final attempt = await _locationService.getCurrentLocation(
         deviceId: deviceId,
       );
-      if (loc == null) {
-        _showMessage('No se pudo obtener la ubicación');
-        return;
-      }
 
-      await ref.read(locationsProvider.notifier).saveMyLocation(loc);
-      _showMessage('Ubicación compartida');
+      switch (attempt.result) {
+        case LocationResult.success:
+          final loc = attempt.location;
+          if (loc == null) {
+            _showMessage('No se pudo obtener la ubicación');
+            return;
+          }
+          await ref.read(locationsProvider.notifier).saveMyLocation(loc);
+          _showMessage('Ubicación compartida');
+          return;
+        case LocationResult.timeout:
+          _showMessage('La ubicación tardó demasiado. Intenta de nuevo.');
+          return;
+        case LocationResult.error:
+        default:
+          _showMessage('No se pudo obtener la ubicación');
+          return;
+      }
     } finally {
       if (mounted) setState(() => _requestingLocation = false);
     }
@@ -85,6 +107,61 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       SnackBar(
         content: Text(msg),
         behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showLocationServiceDialog() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ubicación del sistema apagada'),
+        content: const Text(
+          'Para compartir tu ubicación, activa el GPS o la ubicación '
+          'del sistema desde los ajustes rápidos o la configuración '
+          'de Android.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _locationService.openLocationSettings();
+            },
+            child: const Text('Abrir ajustes'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPermissionForeverDialog() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Permiso de ubicación'),
+        content: const Text(
+          'El permiso fue denegado permanentemente. Actívalo desde '
+          'Ajustes de Android > Apps > Ailoviu > Permisos > Ubicación.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _locationService.openAppSettings();
+            },
+            child: const Text('Abrir ajustes'),
+          ),
+        ],
       ),
     );
   }
@@ -405,7 +482,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
-        // Avatar en squircle
         Container(
           width: 52,
           height: 52,
@@ -456,7 +532,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
           ),
         ),
 
-        // Indicador de estado
         if (widget.hasStatus)
           Positioned(
             top: 0,
@@ -472,7 +547,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
             ),
           ),
 
-        // Badge "＋" para mi avatar
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
             bottom: -2,
