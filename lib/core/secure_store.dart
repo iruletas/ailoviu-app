@@ -1,66 +1,92 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
-import 'prefs_provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Acceso a datos privados persistidos localmente.
+/// Acceso a datos privados persistidos localmente (diario, cartas,
+/// estados privados, etc.).
 ///
-/// Usa el prefijo `secure.` sobre [SharedPreferences] para aislar los
-/// datos sensibles (diario, cartas, estados privados, etc.) del resto
-/// de las preferencias de la app. La API es centralizada a propósito:
-/// si en el futuro se requiere cifrado real, se reemplaza el backend
-/// por `flutter_secure_storage` sin tocar a los consumidores.
+/// Respaldado por [FlutterSecureStorage]: en Android, valores
+/// cifrados con una clave del Keystore del sistema. La API es
+/// asíncrona (a diferencia de SharedPreferences).
 ///
-/// Nota: [SharedPreferences] no está cifrado. Esta capa NO es
-/// criptografía, es aislamiento de namespace + un punto único de
-/// migración futura.
+/// Todas las claves llevan el prefijo `secure.` para no mezclarse con
+/// las de [KeyStore] (claves criptográficas, PIN, config de sync).
+///
+/// Nota: no es para datos grandes (fotos, listas largas). Para eso,
+/// archivos cifrados con una clave guardada aquí.
 class SecureStore {
-  SecureStore(this._prefs);
+  SecureStore(this._storage);
 
-  final SharedPreferences _prefs;
+  final FlutterSecureStorage _storage;
 
   static const String _prefix = 'secure.';
 
   String _key(String key) => '$_prefix$key';
 
-  String? getString(String key) => _prefs.getString(_key(key));
+  Future<String?> getString(String key) => _storage.read(key: _key(key));
 
-  Future<bool> setString(String key, String value) =>
-      _prefs.setString(_key(key), value);
+  Future<void> setString(String key, String value) =>
+      _storage.write(key: _key(key), value: value);
 
-  List<String>? getStringList(String key) => _prefs.getStringList(_key(key));
+  Future<int?> getInt(String key) async {
+    final raw = await getString(key);
+    return raw == null ? null : int.tryParse(raw);
+  }
 
-  Future<bool> setStringList(String key, List<String> value) =>
-      _prefs.setStringList(_key(key), value);
+  Future<void> setInt(String key, int value) =>
+      setString(key, value.toString());
 
-  int? getInt(String key) => _prefs.getInt(_key(key));
+  Future<bool?> getBool(String key) async {
+    final raw = await getString(key);
+    if (raw == null) return null;
+    return raw == 'true';
+  }
 
-  Future<bool> setInt(String key, int value) => _prefs.setInt(_key(key), value);
+  Future<void> setBool(String key, bool value) =>
+      setString(key, value.toString());
 
-  bool? getBool(String key) => _prefs.getBool(_key(key));
+  Future<List<String>?> getStringList(String key) async {
+    final raw = await getString(key);
+    if (raw == null) return null;
+    try {
+      return (jsonDecode(raw) as List).cast<String>();
+    } catch (_) {
+      return null;
+    }
+  }
 
-  Future<bool> setBool(String key, bool value) =>
-      _prefs.setBool(_key(key), value);
+  Future<void> setStringList(String key, List<String> value) =>
+      setString(key, jsonEncode(value));
 
-  Future<bool> remove(String key) => _prefs.remove(_key(key));
+  Future<Map<String, dynamic>?> getJson(String key) async {
+    final raw = await getString(key);
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
 
-  /// Claves actualmente persistidas con el prefijo `secure.`.
-  Set<String> keysWithPrefix() => _prefs
-      .getKeys()
-      .where((k) => k.startsWith(_prefix))
-      .toSet();
+  Future<void> setJson(String key, Map<String, dynamic> value) =>
+      setString(key, jsonEncode(value));
 
-  /// Borra todos los datos privados. Útil para "restablecer todo".
+  Future<void> remove(String key) => _storage.delete(key: _key(key));
+
+  /// Claves actualmente persistidas (sin el prefijo `secure.`).
+  Future<Set<String>> keys() async {
+    final all = await _storage.readAll();
+    return all.keys
+        .where((k) => k.startsWith(_prefix))
+        .map((k) => k.substring(_prefix.length))
+        .toSet();
+  }
+
+  /// Borra solo los datos privados (prefijo `secure.`). No toca las
+  /// claves de [KeyStore]. Útil para "restablecer todo".
   Future<void> clearAll() async {
-    for (final key in keysWithPrefix()) {
-      await _prefs.remove(key);
+    for (final key in await keys()) {
+      await remove(key);
     }
   }
 }
-
-/// [SecureStore] listo para usar, una vez que `SharedPreferences`
-/// terminó de cargar.
-final secureStoreProvider = FutureProvider<SecureStore>((ref) async {
-  final prefs = await ref.watch(prefsProvider.future);
-  return SecureStore(prefs);
-});
