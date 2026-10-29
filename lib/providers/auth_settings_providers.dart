@@ -4,25 +4,53 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/auth_models.dart';
 import '../services/auth_keys.dart';
+import '../services/key_store.dart';
 import 'prefs_provider.dart';
+import 'sync_providers.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
 // AppAuthSettings (persistido)
 // ═══════════════════════════════════════════════════════════════════════
 
 class AuthSettingsNotifier extends StateNotifier<AppAuthSettings> {
-  AuthSettingsNotifier(this._prefsFuture) : super(const AppAuthSettings()) {
+  AuthSettingsNotifier(this._prefsFuture, this._keyStore)
+      : super(const AppAuthSettings()) {
     _load();
   }
 
   final Future<SharedPreferences> _prefsFuture;
+  final KeyStore _keyStore;
+
+  /// Lee el hash del PIN desde [KeyStore]. Si quedó uno de versiones
+  /// anteriores en SharedPreferences, lo migra una sola vez (mismo
+  /// hash y salt: el PIN actual sigue funcionando) y lo borra de ahí.
+  Future<String?> _loadPinHash(SharedPreferences prefs) async {
+    try {
+      final legacyHash = prefs.getString(AuthKeys.appPinHash);
+      final legacySalt = prefs.getString(AuthKeys.appPinSalt);
+      if (legacyHash != null && legacySalt != null) {
+        if (await _keyStore.getPinHash() == null) {
+          await _keyStore.setPinSalt(legacySalt);
+          await _keyStore.setPinHash(legacyHash);
+        }
+        await prefs.remove(AuthKeys.appPinHash);
+        await prefs.remove(AuthKeys.appPinSalt);
+      } else if (legacyHash != null || legacySalt != null) {
+        await prefs.remove(AuthKeys.appPinHash);
+        await prefs.remove(AuthKeys.appPinSalt);
+      }
+      return await _keyStore.getPinHash();
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> _load() async {
     final prefs = await _prefsFuture;
 
     final enabled = prefs.getBool(AuthKeys.appLockEnabled) ?? false;
     final timeoutMs = prefs.getInt(AuthKeys.appLockTimeoutMs);
-    final pinHash = prefs.getString(AuthKeys.appPinHash);
+    final pinHash = await _loadPinHash(prefs);
 
     // Chequeo real de auth del sistema. Se persiste para que la UI
     // muestre el método correcto y para que LockScreen arranque en
@@ -71,12 +99,15 @@ class AuthSettingsNotifier extends StateNotifier<AppAuthSettings> {
   }
 
   /// Marca si hay PIN propio configurado. El hash lo escribe
-  /// `AuthService.setAppPin`; este método solo sincroniza el flag y
-  /// limpia los hashes cuando se desactiva.
+  /// `AuthService.setAppPin` (en [KeyStore]); este método solo
+  /// sincroniza el flag y limpia los hashes cuando se desactiva.
   Future<void> markAppPinConfigured(bool value) async {
     state = state.copyWith(appPinFallbackConfigured: value);
-    final prefs = await _prefsFuture;
     if (!value) {
+      try {
+        await _keyStore.clearPin();
+      } catch (_) {}
+      final prefs = await _prefsFuture;
       await prefs.remove(AuthKeys.appPinHash);
       await prefs.remove(AuthKeys.appPinSalt);
     }
@@ -85,7 +116,10 @@ class AuthSettingsNotifier extends StateNotifier<AppAuthSettings> {
 
 final authSettingsProvider =
     StateNotifierProvider<AuthSettingsNotifier, AppAuthSettings>(
-  (ref) => AuthSettingsNotifier(ref.read(prefsProvider.future)),
+  (ref) => AuthSettingsNotifier(
+    ref.read(prefsProvider.future),
+    ref.read(keyStoreProvider),
+  ),
 );
 
 // ═══════════════════════════════════════════════════════════════════════
