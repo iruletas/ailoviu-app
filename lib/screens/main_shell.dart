@@ -3,11 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'days_screen.dart';
+import 'games_screen.dart';
 import 'home_screen.dart';
-import 'calendar_screen.dart';
-import 'connection_screen.dart';
-import 'play_screen.dart';
 import 'settings_screen.dart';
+import 'us_screen.dart';
 
 // ── Layout ────────────────────────────────────────────────────────────────
 const double _kBarMaxWidth = 480.0;
@@ -47,17 +47,17 @@ const List<_NavDestination> _kNavDestinations = [
   _NavDestination(
     icon: Icons.home_outlined,
     activeIcon: Icons.home_rounded,
-    label: 'Inicio',
+    label: 'Hogar',
   ),
   _NavDestination(
     icon: Icons.calendar_today_outlined,
     activeIcon: Icons.calendar_month_rounded,
-    label: 'Calendario',
+    label: 'Días',
   ),
   _NavDestination(
-    icon: Icons.mail_outline_rounded,
-    activeIcon: Icons.mark_chat_unread_rounded,
-    label: 'Mensajes',
+    icon: Icons.favorite_border_rounded,
+    activeIcon: Icons.favorite_rounded,
+    label: 'Nosotros',
   ),
   _NavDestination(
     icon: Icons.sports_esports_outlined,
@@ -108,16 +108,17 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     const pages = <Widget>[
       HomeScreen(),
-      CalendarScreen(),
-      ConnectionScreen(),
-      PlayScreen(),
+      DaysScreen(),
+      UsScreen(),
+      GamesScreen(),
     ];
 
     final viewPadding = MediaQuery.viewPaddingOf(context);
     final safeTop = viewPadding.top;
     final safeBottom = viewPadding.bottom;
 
-    // Espacio reservado abajo para que el contenido no quede tapado por la navbar
+    // Espacio reservado abajo para que el contenido no quede tapado
+    // por la navbar.
     final bottomReserved = safeBottom + _kBarHeight + _kBarBottomMargin * 2;
 
     return Scaffold(
@@ -449,7 +450,6 @@ class _SettingsCapsuleState extends State<_SettingsCapsule>
   }
 }
 
-// ── Badge pulsante autónomo (maneja su propio AnimationController) ───────
 class _PulsingBadge extends StatefulWidget {
   const _PulsingBadge();
 
