@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -15,7 +14,8 @@ import '../providers/home_providers.dart';
 /// - Anillo de cooldown con caps redondeados.
 /// - Jitter shake del ícono al enviar.
 /// - Badge flotante con zumbidos restantes del día.
-/// - Toast flotante de cristal (sin SnackBar nativo).
+/// - Toast flotante de cristal que aparece **a la derecha** del
+///   botón (no encima, no centrado: no colisiona con nada).
 /// - Háptica: lightImpact bloqueado, heavyImpact al enviar.
 class BuzzButton extends ConsumerStatefulWidget {
   const BuzzButton({super.key});
@@ -114,7 +114,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
       _toastIcon = icon;
       _showToast = true;
     });
-    Future.delayed(const Duration(milliseconds: 1800), () {
+    Future.delayed(const Duration(milliseconds: 2200), () {
       if (mounted) setState(() => _showToast = false);
     });
   }
@@ -133,7 +133,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
-        // Botón
+        // ── Botón principal ────────────────────────────────────────
         AnimatedBuilder(
           animation: Listenable.merge([
             _pressController,
@@ -156,7 +156,6 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Anillo de cooldown
                       if (cooldown != null)
                         SizedBox(
                           width: 56,
@@ -169,7 +168,6 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
                             backgroundColor: Colors.transparent,
                           ),
                         ),
-                      // Squircle
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: _onTap,
@@ -212,7 +210,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
           },
         ),
 
-        // Badge con restantes
+        // ── Badge con restantes ────────────────────────────────────
         Positioned(
           top: -4,
           right: -4,
@@ -238,11 +236,22 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
           ),
         ),
 
-        // Toast flotante
+        // ── Toast a la DERECHA del botón ───────────────────────────
+        // No se desborda: el ancla es el borde derecho del botón y el
+        // texto se renderiza con mainAxisSize.min. Como está dentro de
+        // un Positioned con `left` y no `right`, crece hacia la derecha
+        // sin límite de ancho del botón.
         if (_showToast)
           Positioned(
-            top: 64,
-            child: _FloatingToast(text: _toastText, icon: _toastIcon),
+            left: 60,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _FloatingToast(
+                text: _toastText,
+                icon: _toastIcon,
+              ),
+            ),
           ),
       ],
     );
@@ -265,9 +274,12 @@ class _FloatingToast extends StatelessWidget {
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutBack,
       builder: (context, value, child) {
-        return Transform.scale(
-          scale: 0.8 + value * 0.2,
-          child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+        return Transform.translate(
+          offset: Offset(-8 * (1 - value), 0),
+          child: Opacity(
+            opacity: value.clamp(0.0, 1.0),
+            child: child,
+          ),
         );
       },
       child: ClipRRect(
@@ -275,9 +287,12 @@ class _FloatingToast extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 10,
+            ),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHigh.withValues(alpha: 0.85),
+              color: scheme.surfaceContainerHigh.withValues(alpha: 0.92),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: scheme.outlineVariant.withValues(alpha: 0.4),
