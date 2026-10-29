@@ -4,12 +4,32 @@ import 'package:geolocator/geolocator.dart';
 
 import '../models/home_models.dart';
 
+/// Resultado de un intento de obtener ubicación.
+///
+/// Permite distinguir entre "no hay permiso", "el servicio de ubicación
+/// está apagado", y "no se pudo obtener la posición".
+enum LocationResult {
+  success,
+  serviceDisabled,
+  permissionDenied,
+  permissionDeniedForever,
+  timeout,
+  error,
+}
+
+class LocationAttempt {
+  final LocationResult result;
+  final PartnerLocation? location;
+
+  const LocationAttempt({required this.result, this.location});
+
+  bool get isSuccess => result == LocationResult.success;
+}
+
 /// Servicio de ubicación.
 ///
-/// - [requestPermission]: pide permiso foreground y background.
-/// - [getCurrentLocation]: obtiene la ubicación ahora (foreground).
-/// - [startBackgroundUpdates]: stream de ubicaciones mientras la app
-///   corre en segundo plano. Usa `flutter_foreground_task` (ya activo).
+/// - [ensurePermission]: chequea y pide permisos si es necesario.
+/// - [getCurrentLocation]: obtiene la ubicación ahora.
 /// - [distanceKmBetween]: distancia en km entre dos coordenadas.
 ///
 /// El envío por sync de las ubicaciones NO se hace aquí: eso lo hace
@@ -17,33 +37,55 @@ import '../models/home_models.dart';
 class LocationService {
   LocationService();
 
-  /// Pide permiso foreground + background.
+  /// Asegura que haya permiso de ubicación concedido.
   ///
-  /// Devuelve `true` si ambos permisos quedaron concedidos.
-  /// Background solo se pide si foreground fue concedido.
-  Future<bool> requestPermission() async {
+  /// Reglas:
+  /// - Si el servicio de ubicación del sistema está apagado, retorna
+  ///   [LocationResult.serviceDisabled].
+  /// - Si ya hay permiso `whileInUse` o `always`, retorna
+  ///   [LocationResult.success] **sin volver a pedir** (evita el bug
+  ///   de Android que devuelve `denied` al re-pedir un permiso ya
+  ///   concedido).
+  /// - Si no hay permiso, lo pide una vez.
+  Future<LocationResult> ensurePermission() async {
+    // 1. Servicio del sistema encendido.
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return false;
+    if (!serviceEnabled) {
+      return LocationResult.serviceDisabled;
+    }
 
+    // 2. Permiso actual.
     var permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.deniedForever) {
+      return LocationResult.permissionDeniedForever;
+    }
+
     if (permission == LocationPermission.denied) {
+      // Pedir una vez.
       permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      return false;
+
+      if (permission == LocationPermission.deniedForever) {
+        return LocationResult.permissionDeniedForever;
+      }
+      if (permission == LocationPermission.denied) {
+        return LocationResult.permissionDenied;
+      }
     }
 
-    // Background: solo aplica en Android. En iOS se maneja distinto.
-    if (permission == LocationPermission.whileInUse) {
-      permission = await Geolocator.requestPermission();
+    // 3. Con `whileInUse` o `always` ya sirve para el mapa.
+    if (permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always) {
+      return LocationResult.success;
     }
 
-    return permission == LocationPermission.always ||
-        permission == LocationPermission.whileInUse;
+    return LocationResult.permissionDenied;
   }
 
-  /// `true` si hay permiso para leer ubicación ahora.
+  /// `true` si el servicio de ubicación del sistema está encendido.
+  Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();
+
+  /// `true` si hay permiso de foreground (o background).
   Future<bool> hasPermission() async {
     final permission = await Geolocator.checkPermission();
     return permission == LocationPermission.always ||
@@ -56,13 +98,14 @@ class LocationService {
     return permission == LocationPermission.always;
   }
 
-  /// Obtiene la ubicación actual. `null` si no hay permiso o falla.
-  Future<PartnerLocation?> getCurrentLocation({
+  /// Obtiene la ubicación actual.
+  ///
+  /// No pide permisos: el caller debe haber llamado [ensurePermission]
+  /// antes. Devuelve [LocationAttempt] con el resultado y la ubicación.
+  Future<LocationAttempt> getCurrentLocation({
     required String deviceId,
     Duration timeout = const Duration(seconds: 15),
   }) async {
-    if (!await hasPermission()) return null;
-
     try {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(
@@ -70,14 +113,19 @@ class LocationService {
           timeLimit: timeout,
         ),
       );
-      return PartnerLocation(
-        deviceId: deviceId,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        capturedAt: DateTime.now(),
+      return LocationAttempt(
+        result: LocationResult.success,
+        location: PartnerLocation(
+          deviceId: deviceId,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          capturedAt: DateTime.now(),
+        ),
       );
+    } on TimeoutException {
+      return const LocationAttempt(result: LocationResult.timeout);
     } catch (_) {
-      return null;
+      return const LocationAttempt(result: LocationResult.error);
     }
   }
 
