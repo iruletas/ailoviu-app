@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/secure_store.dart';
 import '../models/home_models.dart';
 import '../models/sync_models.dart';
+import '../services/device_identity_service.dart';
 import 'prefs_provider.dart';
 import 'sync_providers.dart';
 
@@ -20,15 +21,23 @@ class _Keys {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// deviceId local
+// deviceId local (independiente de sync)
 // ═══════════════════════════════════════════════════════════════════════
 
-/// deviceId de este dispositivo. Lo genera `SyncService.initialize()`
-/// la primera vez. Si todavía no existe (app recién instalada, sync
-/// nunca inicializó), devuelve cadena vacía.
+/// Servicio de identidad del dispositivo. Crea el deviceId si no
+/// existe, sin depender de que haya pareja o sync.
+final deviceIdentityServiceProvider = Provider<DeviceIdentityService>(
+  (ref) => DeviceIdentityService(keyStore: ref.watch(keyStoreProvider)),
+);
+
+/// deviceId de este dispositivo.
+///
+/// Se crea la primera vez que se abre la app y se mantiene en
+/// [KeyStore] (Keystore Android). No depende de SyncService: existe
+/// aunque nunca haya pareja emparejada.
 final myDeviceIdProvider = FutureProvider<String>((ref) async {
-  final keyStore = ref.watch(keyStoreProvider);
-  return await keyStore.getDeviceId() ?? '';
+  final service = ref.watch(deviceIdentityServiceProvider);
+  return service.getOrCreate();
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -324,7 +333,7 @@ Future<void> handleHomeSyncPayload({
         final status = PartnerStatus.fromJson(
           Map<String, dynamic>.from(data['status'] as Map),
         );
-        if (status.authorDeviceId == myId) return; // el mío, ignoralo
+        if (status.authorDeviceId == myId) return;
         if (!status.isExpired()) {
           await ref.read(statusesProvider.notifier).save(status);
         }
@@ -333,7 +342,7 @@ Future<void> handleHomeSyncPayload({
         final loc = PartnerLocation.fromJson(
           Map<String, dynamic>.from(data['location'] as Map),
         );
-        if (loc.deviceId == myId) return; // el mío, ignoralo
+        if (loc.deviceId == myId) return;
         await ref.read(locationsProvider.notifier).saveOtherLocation(loc);
         break;
     }
