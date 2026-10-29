@@ -230,4 +230,282 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
   Widget _buildEmptyState(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      color: scheme
+      color: scheme.surfaceContainerLow,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Icon(
+              Icons.map_rounded,
+              size: 32,
+              color: scheme.onPrimaryContainer,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Comparte tu ubicación para ver el mapa',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonal(
+            onPressed: _requestingLocation ? null : _requestAndShareLocation,
+            style: FilledButton.styleFrom(
+              shape: const StadiumBorder(),
+            ),
+            child: _requestingLocation
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Compartir ubicación'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDistanceBadge(
+    BuildContext context,
+    LocationsSnapshot snapshot,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final locs = snapshot.everyone;
+    if (locs.length < 2) return const SizedBox.shrink();
+
+    var totalKm = 0.0;
+    for (int i = 0; i < locs.length - 1; i++) {
+      totalKm += _distanceKmBetween(
+        lat1: locs[i].latitude,
+        lon1: locs[i].longitude,
+        lat2: locs[i + 1].latitude,
+        lon2: locs[i + 1].longitude,
+      );
+    }
+
+    final together = totalKm < 1.0;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 14,
+      child: Center(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: together
+                    ? scheme.tertiaryContainer.withValues(alpha: 0.9)
+                    : scheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    together
+                        ? Icons.favorite_rounded
+                        : Icons.near_me_rounded,
+                    size: 16,
+                    color: together
+                        ? scheme.onTertiaryContainer
+                        : scheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    together
+                        ? '¡Están juntos!'
+                        : '${totalKm.round()} km',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: together
+                          ? scheme.onTertiaryContainer
+                          : scheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _distanceKmBetween({
+    required double lat1,
+    required double lon1,
+    required double lat2,
+    required double lon2,
+  }) {
+    const earthRadiusKm = 6371.0;
+    final dLat = _deg2rad(lat2 - lat1);
+    final dLon = _deg2rad(lon2 - lon1);
+    final a = (math.sin(dLat / 2) * math.sin(dLat / 2)) +
+        math.cos(_deg2rad(lat1)) *
+            math.cos(_deg2rad(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  double _deg2rad(double deg) => deg * (math.pi / 180.0);
+}
+
+class _AvatarMarker extends StatefulWidget {
+  final String name;
+  final bool isMe;
+  final bool hasStatus;
+  final VoidCallback? onEditStatus;
+
+  const _AvatarMarker({
+    required this.name,
+    required this.isMe,
+    required this.hasStatus,
+    this.onEditStatus,
+  });
+
+  @override
+  State<_AvatarMarker> createState() => _AvatarMarkerState();
+}
+
+class _AvatarMarkerState extends State<_AvatarMarker> {
+  bool _badgePressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final initial = widget.name.trim().isEmpty
+        ? null
+        : widget.name.trim()[0].toUpperCase();
+
+    return Stack(
+      alignment: Alignment.center,
+      clipBehavior: Clip.none,
+      children: [
+        // Avatar en squircle
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: widget.isMe
+                ? scheme.primaryContainer
+                : scheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: scheme.surface,
+              width: 3,
+            ),
+            boxShadow: widget.isMe
+                ? [
+                    BoxShadow(
+                      color: scheme.primary.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+          ),
+          child: Center(
+            child: initial == null
+                ? Icon(
+                    Icons.person_outline,
+                    size: 22,
+                    color: widget.isMe
+                        ? scheme.onPrimaryContainer
+                        : scheme.onSecondaryContainer,
+                  )
+                : Text(
+                    initial,
+                    style: TextStyle(
+                      color: widget.isMe
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 20,
+                    ),
+                  ),
+          ),
+        ),
+
+        // Indicador de estado
+        if (widget.hasStatus)
+          Positioned(
+            top: 0,
+            left: 0,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: scheme.tertiary,
+                shape: BoxShape.circle,
+                border: Border.all(color: scheme.surface, width: 2),
+              ),
+            ),
+          ),
+
+        // Badge "＋" para mi avatar
+        if (widget.isMe && widget.onEditStatus != null)
+          Positioned(
+            bottom: -2,
+            right: -2,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (_) => setState(() => _badgePressed = true),
+              onTapUp: (_) => setState(() => _badgePressed = false),
+              onTapCancel: () => setState(() => _badgePressed = false),
+              onTap: widget.onEditStatus,
+              child: AnimatedScale(
+                scale: _badgePressed ? 0.88 : 1.0,
+                duration: const Duration(milliseconds: 180),
+                curve:
+                    _badgePressed ? Curves.easeOutCubic : Curves.easeOutBack,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: scheme.surface, width: 2),
+                  ),
+                  child: Icon(
+                    Icons.add_rounded,
+                    size: 12,
+                    color: scheme.onTertiaryContainer,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
