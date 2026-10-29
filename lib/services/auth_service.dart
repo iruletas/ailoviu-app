@@ -5,10 +5,9 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:local_auth/local_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../providers/prefs_provider.dart';
-import 'auth_keys.dart';
+import '../providers/sync_providers.dart';
+import 'key_store.dart';
 
 /// Resultado de un intento de autenticación con el sistema.
 enum AuthResult {
@@ -25,12 +24,14 @@ enum AuthResult {
 ///   (`BiometricPrompt` en Android). El sistema muestra huella/PIN/
 ///   patrón/contraseña, lo que el usuario tenga configurado.
 /// - [verifyAppPin] / [setAppPin]: PIN propio de la app como fallback
-///   cuando el dispositivo no tiene bloqueo de pantalla.
+///   cuando el dispositivo no tiene bloqueo de pantalla. El hash y el
+///   salt viven en [KeyStore] (Android Keystore), no en
+///   SharedPreferences.
 class AuthService {
-  AuthService(this._localAuth, this._prefs);
+  AuthService(this._localAuth, this._keyStore);
 
   final LocalAuthentication _localAuth;
-  final SharedPreferences _prefs;
+  final KeyStore _keyStore;
 
   // ── Sistema ────────────────────────────────────────────────────────
 
@@ -80,22 +81,23 @@ class AuthService {
   Future<void> setAppPin(String pin) async {
     final salt = _generateSalt();
     final hash = _hashPin(pin, salt);
-    await _prefs.setString(AuthKeys.appPinSalt, salt);
-    await _prefs.setString(AuthKeys.appPinHash, hash);
+    await _keyStore.setPinSalt(salt);
+    await _keyStore.setPinHash(hash);
   }
 
   Future<bool> verifyAppPin(String pin) async {
-    final salt = _prefs.getString(AuthKeys.appPinSalt);
-    final storedHash = _prefs.getString(AuthKeys.appPinHash);
-    if (salt == null || storedHash == null) return false;
-    final inputHash = _hashPin(pin, salt);
-    return _constantTimeEquals(storedHash, inputHash);
+    try {
+      final salt = await _keyStore.getPinSalt();
+      final storedHash = await _keyStore.getPinHash();
+      if (salt == null || storedHash == null) return false;
+      final inputHash = _hashPin(pin, salt);
+      return _constantTimeEquals(storedHash, inputHash);
+    } catch (_) {
+      return false;
+    }
   }
 
-  Future<void> clearAppPin() async {
-    await _prefs.remove(AuthKeys.appPinSalt);
-    await _prefs.remove(AuthKeys.appPinHash);
-  }
+  Future<void> clearAppPin() => _keyStore.clearPin();
 
   String _generateSalt() {
     final rng = Random.secure();
@@ -118,9 +120,11 @@ class AuthService {
   }
 }
 
-/// [AuthService] listo para usar, una vez que `SharedPreferences`
-/// terminó de cargar.
+/// [AuthService] listo para usar.
+///
+/// Sigue siendo `FutureProvider` para no tocar a los consumidores
+/// (`ref.read(authServiceProvider.future)`).
 final authServiceProvider = FutureProvider<AuthService>((ref) async {
-  final prefs = await ref.watch(prefsProvider.future);
-  return AuthService(LocalAuthentication(), prefs);
+  final keyStore = ref.watch(keyStoreProvider);
+  return AuthService(LocalAuthentication(), keyStore);
 });
