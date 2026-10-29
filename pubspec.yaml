@@ -58,6 +58,13 @@ dependencies:
   # ── Juegos en persona (Nearby Connections) ─────────────────────
   nearby_connections: ^4.3.0
 
+  # ── Mapa (OSM gratis, sin API key) ─────────────────────────────
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # ── Ubicación del dispositivo ──────────────────────────────────
+  geolocator: ^13.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
