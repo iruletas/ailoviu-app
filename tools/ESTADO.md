@@ -8,8 +8,10 @@ _Última actualización: 2026-10-28_
 en M3E.
 **Bloque A (infra de auth) cerrado.** Auth biométrica, PIN fallback,
 app-lock, feature-lock, SecurityScreen funcional.
+**Bloque B (infra de sync y juegos) cerrado.** E2EE, Firebase, servicio
+en primer plano, modelos de juegos, auto-versionado y compilación estable.
 
-Próximo: **Bloque B — Home real + Estados**.
+Próximo: **Bloque C — UI de Sync (Onboarding, QR, Ajustes) + Home real**.
 
 ## ✅ Hecho
 
@@ -103,19 +105,78 @@ providers, packages/m3e_shapes integrado.)
 - [x] Regla 8 ampliada: importar el archivo del tipo cuando se llama
       método sobre resultado de provider.
 
-## 🔜 Siguiente (Bloque B)
+---
 
-1. **Home real**:
+### Bloque B — Infraestructura de Sync y Juegos (cerrado 2026-10-28)
+
+#### Archivos nuevos (Modelos)
+- [x] `lib/models/sync_models.dart` — `SyncEnvelope`, `SyncType`, `SyncStatus`, `TransportResult`, etc.
+- [x] `lib/models/game_models.dart` — `GameSession`, `GameMove`, `GameMode`.
+- [x] `lib/models/calendar_models.dart` — `CalendarEvent`, `CalendarEventType`.
+
+#### Archivos nuevos (Servicios)
+- [x] `lib/services/key_store.dart` — Wrapper de `flutter_secure_storage` (Keystore).
+- [x] `lib/services/crypto_service.dart` — X25519, HKDF, AES-GCM, HMAC-SHA256.
+- [x] `lib/services/sync_transport.dart` — Interfaz abstracta.
+- [x] `lib/services/firebase_transport.dart` — Implementación con RTDB (con persistencia offline y `.info/connected`).
+- [x] `lib/services/transport_config.dart` — Resolución de config (Firebase o none).
+- [x] `lib/services/notification_service.dart` — Notificaciones locales (con ID estable para evitar duplicados).
+- [x] `lib/services/push_service.dart` — Registro de token FCM (envío real pendiente de Cloud Function).
+- [x] `lib/services/sync_service.dart` — Orquestador con cola de eventos, deduplicación y ACKs.
+- [x] `lib/services/background_sync.dart` — Servicio en primer plano (`flutter_foreground_task`) para recibir con la app cerrada.
+- [x] `lib/services/nearby_game_service.dart` — Esqueleto para `nearby_connections` (TODOs).
+- [x] `lib/services/local_game_service.dart` — Juegos de una sola pantalla.
+
+#### Archivos nuevos (Dominio de Juegos)
+- [x] `lib/games/game_definition.dart` — Contrato abstracto.
+- [x] `lib/games/game_session.dart` — Wrapper con lógica de movimientos.
+
+#### Archivos nuevos (Providers)
+- [x] `lib/providers/sync_providers.dart` — `keyStoreProvider`, `cryptoServiceProvider`, `syncServiceProvider`, etc.
+
+#### Archivos modificados
+- [x] `lib/main.dart` — Inicializa `FlutterForegroundTask` y arranca `BackgroundSyncService.bootstrap()`.
+- [x] `android/app/src/main/AndroidManifest.xml` — Permisos de Bluetooth, Wi-Fi, foreground service (`remoteMessaging`), recepción de boot.
+- [x] `pubspec.yaml` — Nuevas dependencias (firebase, cryptography, flutter_foreground_task, etc.).
+
+#### Configuración y Build
+- [x] `android/settings.gradle.kts` — AGP 8.11.1, Kotlin 2.2.20.
+- [x] `android/gradle/wrapper/gradle-wrapper.properties` — Gradle 8.14.3.
+- [x] `.github/workflows/build.yml` — Reincorporado el auto-versionado con `VERSION="0.1.${{ github.run_number }}"`.
+- [x] `.github/workflows/build.yml` — `flutter build apk --release --target-platform android-arm64` para evitar conflictos de firma.
+- [x] `.github/workflows/build.yml` — Se eliminó el script de Python ("inyección quirúrgica") y se usa `git checkout -- android/app/build.gradle.kts` tras `flutter create`.
+
+#### Bugs resueltos
+- [x] `prefs_provider.dart` importaba `services/secure_store.dart` cuando el archivo está en `core/secure_store.dart`. Build roto.
+- [x] El build fallaba porque Gradle 8.9.0 < 8.14.0 (exigido por Flutter 3.47.7).
+- [x] El build fallaba porque Kotlin 2.1.0 < 2.2.20.
+- [x] El build fallaba por falta de recursos (`mipmap/ic_launcher`, `style/LaunchTheme`) porque `flutter create` no se ejecutó. Ahora siempre se ejecuta y se restaura el `build.gradle.kts`.
+- [x] El APK daba "paquete no válido" al instalar sobre una versión vieja (firmas conflictivas). Se solucionó desinstalando la versión vieja y compilando solo para `arm64` con `minSdk = 23`.
+
+#### Decisiones tomadas
+- [x] **Sin Double Ratchet.** Se descartó implementarlo a mano porque la complejidad y el riesgo de bugs superaban el beneficio para dos personas. Se usa X25519 (X3DH simplificado) + AES-GCM estático (secreto compartido guardado en Keystore).
+- [x] **`lib/games/`** es la carpeta de dominio. `play_screen` sigue siendo la pantalla UI. Los juegos concretos (ruleta, preguntas) vivirán en `lib/games/`.
+- [x] **Auto-versionado devuelto.** El workflow vuelve a usar `0.1.{run_number}` porque es más cómodo para el flujo del desarrollador.
+
+---
+
+## 🔜 Siguiente (Bloque C)
+
+1. **UI de Sync**:
+   - `onboarding_transport_screen.dart` (pegar `google-services.json` y validar).
+   - `pairing_screen.dart` (QR de emparejamiento, intercambio de llaves X25519).
+   - `sync_settings_screen.dart` (estado del sync, forzar sync, toggle del servicio en primer plano).
+2. **Home real**:
    - `RelationshipPreview` o `RelationshipSummaryCard(hero)` como hero.
    - `AnniversaryBadge` (días juntos).
    - Slot para próximo día especial (requiere Calendario futuro).
    - **Estados**: editor de estado corto (texto/emoji), persistido en
      `SecureStore`, mostrado en Home con "vistazo rápido".
    - Una acción única (Jugar, o Escribir estado).
-2. **`calendar_screen.dart`** real.
-3. **`connection_screen.dart`** real (mensajes).
-4. **`play_screen.dart`** real.
-5. **`FeatureGate`** wrapper (cuando llegue la primera feature
+3. **`calendar_screen.dart`** real.
+4. **`connection_screen.dart`** real (mensajes).
+5. **`play_screen.dart`** real.
+6. **`FeatureGate`** wrapper (cuando llegue la primera feature
    privada: Diario, Cartas, etc.).
 
 ## 🐛 Bugs abiertos
