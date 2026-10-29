@@ -23,23 +23,31 @@ import 'transport_config.dart';
 /// Entrega de sobres entrantes:
 /// 1. Se procesan de uno en uno y en orden.
 /// 2. Un sobre solo se confirma al transporte (y se borra del buzón)
-///    cuando ya se entregó a [events] o se guardó en la cola interna
-///    hasta que alguien escuche. Un fallo temporal no lo pierde.
+///    cuando se entregó a alguien que escucha [events]. Si nadie
+///    escucha todavía, espera en una cola en memoria Y sigue en el
+///    buzón: si la app se cierra, se reentrega al volver.
 /// 3. Los sobres inválidos, expirados o ilegibles se descartan: no
 ///    tienen arreglo y atascarían el buzón.
 /// 4. Se deduplica por id (el transporte puede reentregar).
 ///
-/// Ojo: la cola interna vive en memoria. Cuando existan las features
-/// que persisten mensajes (Bloque C), lo ideal es confirmar después de
-/// persistir, no antes.
+/// Modo [notifyOnly] (servicio en segundo plano): solo descifra y
+/// notifica. NUNCA entrega ni confirma, así el sobre sigue en el
+/// buzón hasta que la app lo procese.
+///
+/// Ojo: cuando existan las features que persisten mensajes (Bloque
+/// C), lo ideal es confirmar después de persistir, no al entregar.
 class SyncService {
   SyncService({
     required KeyStore keyStore,
     required CryptoService crypto,
     required NotificationService notifications,
+    this.notifyOnly = false,
   })  : _keyStore = keyStore,
         _crypto = crypto,
         _notifications = notifications;
+
+  /// `true` en el servicio en segundo plano: solo notifica.
+  final bool notifyOnly;
 
   final KeyStore _keyStore;
   final CryptoService _crypto;
@@ -75,6 +83,12 @@ class SyncService {
 
   /// Inicializa el servicio.
   Future<void> initialize() async {
+    try {
+      await _notifications.initialize(requestPermission: !notifyOnly);
+    } catch (_) {
+      // Sin notificaciones el sync debe funcionar igual.
+    }
+
     _deviceId = await _keyStore.getDeviceId();
     if (_deviceId == null) {
       _deviceId = _uuid.v4();
@@ -221,11 +235,10 @@ class SyncService {
     final secret = _sharedSecret;
     if (transport == null || secret == null) return;
 
-    SyncEvent? delivered;
     try {
       // Reentrega de algo ya procesado: solo confirmar.
       if (_seen.contains(envelope.id)) {
-        await transport.acknowledge(envelope.id);
+        if (!notifyOnly) _ack(envelope.id);
         return;
       }
 
@@ -233,24 +246,16 @@ class SyncService {
       if (event == null) {
         // Inválido, expirado o ilegible: no tiene arreglo. Se
         // descarta para no atascar el buzón.
-        await transport.acknowledge(envelope.id);
-        return;
-      }
-
-      if (!_deliver(event)) {
-        // Cola interna llena: se deja en el buzón (no se confirma).
+        if (!notifyOnly) _ack(envelope.id);
         return;
       }
 
       _markSeen(envelope.id);
-      await transport.acknowledge(envelope.id);
-      delivered = event;
+      if (!notifyOnly) _deliver(event);
+      await _notifyIfNeeded(event);
     } catch (_) {
       // Fallo inesperado: NO se confirma, el sobre sigue en el buzón.
-      return;
     }
-
-    await _notifyIfNeeded(delivered);
   }
 
   /// Verifica, revisa TTL y descifra. `null` = descartar.
@@ -295,20 +300,32 @@ class SyncService {
     }
   }
 
-  /// Entrega el evento a quien escuche, o lo guarda en la cola
-  /// interna. Devuelve `false` si no hay lugar para guardarlo.
-  bool _deliver(SyncEvent event) {
-    if (_eventsController.isClosed) return false;
+  /// Entrega el evento a quien escuche, o lo deja en la cola interna
+  /// hasta que alguien escuche. El sobre se confirma al transporte
+  /// solo cuando un suscriptor lo recibe ([_emit]).
+  void _deliver(SyncEvent event) {
+    if (_eventsController.isClosed) return;
 
     if (_eventsController.hasListener) {
       _flushPending(); // primero lo acumulado, para conservar el orden
-      _eventsController.add(event);
-      return true;
+      _emit(event);
+      return;
     }
 
-    if (_pending.length >= _maxPending) return false;
-    _pending.add(event);
-    return true;
+    // Si la cola está llena, el sobre simplemente se queda en el
+    // buzón (sin confirmar) y se reentrega en el próximo arranque.
+    if (_pending.length < _maxPending) _pending.add(event);
+  }
+
+  void _emit(SyncEvent event) {
+    _eventsController.add(event);
+    _ack(event.envelope.id);
+  }
+
+  void _ack(String envelopeId) {
+    final transport = _transport;
+    if (transport == null) return;
+    unawaited(transport.acknowledge(envelopeId));
   }
 
   void _onFirstListener() {
@@ -320,7 +337,7 @@ class SyncService {
     while (_pending.isNotEmpty &&
         !_eventsController.isClosed &&
         _eventsController.hasListener) {
-      _eventsController.add(_pending.removeAt(0));
+      _emit(_pending.removeAt(0));
     }
   }
 
@@ -338,7 +355,13 @@ class SyncService {
       final title =
           type == SyncType.message ? 'Nuevo mensaje' : 'Nuevo estado';
       final body = event.payload.data['preview'] as String? ?? 'Toca para ver';
-      await _notifications.show(title: title, body: body);
+      // Id derivado del sobre: si la app y el servicio en segundo
+      // plano notifican lo mismo, se reemplazan en vez de duplicarse.
+      await _notifications.show(
+        title: title,
+        body: body,
+        id: NotificationService.stableId(event.envelope.id),
+      );
     } catch (_) {
       // Una notificación fallida no debe afectar la entrega.
     }
