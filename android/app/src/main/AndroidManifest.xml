@@ -8,7 +8,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
@@ -55,13 +57,13 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Descomentar cuando escribamos ForegroundSyncService (paso 3) -->
-        <!--
+        <!-- Servicio en primer plano de flutter_foreground_task. No
+             cambiar el nombre. Tipo remoteMessaging: recibir mensajes
+             con la app cerrada. -->
         <service
-            android:name=".ForegroundSyncService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"/>
-        -->
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="remoteMessaging"
+            android:exported="false"/>
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
