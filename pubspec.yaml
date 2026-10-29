@@ -45,6 +45,9 @@ dependencies:
   # ── Notificaciones locales (FCM muestra la notificación) ───────
   flutter_local_notifications: ^17.2.3
 
+  # ── Servicio en primer plano (recibir con la app cerrada) ──────
+  flutter_foreground_task: ^11.0.3
+
   # ── Emparejamiento por QR ──────────────────────────────────────
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.2.3
