@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 /// Tarjeta "Menstruación" para Hogar.
 ///
 /// Placeholder hasta que exista la feature real. Icono de construcción
-/// en Squircle con pulse, pill badge "Próximamente", y modal explicativo.
+/// en Squircle con pulse, pill "Próximamente", y modal explicativo.
+///
+/// Tono rojo/error para asociar visualmente con el ciclo.
 class MenstruationPreviewCard extends StatefulWidget {
   const MenstruationPreviewCard({super.key});
 
@@ -74,11 +76,11 @@ class _MenstruationPreviewCardState extends State<MenstruationPreviewCard>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
             color: Color.alphaBlend(
-              scheme.errorContainer.withValues(alpha: 0.08),
+              scheme.errorContainer.withValues(alpha: 0.18),
               scheme.surfaceContainerLow,
             ),
             border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.25),
+              color: scheme.error.withValues(alpha: 0.25),
             ),
           ),
           padding: const EdgeInsets.all(16),
@@ -90,13 +92,13 @@ class _MenstruationPreviewCardState extends State<MenstruationPreviewCard>
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: scheme.tertiaryContainer,
+                    color: scheme.errorContainer,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Icon(
                     Icons.construction_rounded,
                     size: 24,
-                    color: scheme.onTertiaryContainer,
+                    color: scheme.onErrorContainer,
                   ),
                 ),
               ),
@@ -113,6 +115,7 @@ class _MenstruationPreviewCardState extends State<MenstruationPreviewCard>
                             'Menstruación',
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
+                              color: scheme.onErrorContainer,
                             ),
                           ),
                         ),
@@ -122,13 +125,13 @@ class _MenstruationPreviewCardState extends State<MenstruationPreviewCard>
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest,
+                            color: scheme.errorContainer,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             'Próximamente',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
+                              color: scheme.onErrorContainer,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -139,7 +142,7 @@ class _MenstruationPreviewCardState extends State<MenstruationPreviewCard>
                     Text(
                       'Fases, síntomas y cuidados',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                        color: scheme.onErrorContainer.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -175,13 +178,13 @@ class _MenstruationPreviewSheet extends StatelessWidget {
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-              color: scheme.tertiaryContainer,
+              color: scheme.errorContainer,
               borderRadius: BorderRadius.circular(22),
             ),
             child: Icon(
               Icons.water_drop_rounded,
               size: 32,
-              color: scheme.onTertiaryContainer,
+              color: scheme.onErrorContainer,
             ),
           ),
           const SizedBox(height: 20),
