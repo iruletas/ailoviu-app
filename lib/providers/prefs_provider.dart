@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../services/secure_store.dart';
+import '../core/secure_store.dart'; // <-- AQUÍ ESTABA EL ERROR (era ../services/)
 
 /// Instancia única de [SharedPreferences] para toda la app.
 ///
