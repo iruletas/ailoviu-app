@@ -29,6 +29,7 @@
 
     <application
         android:label="Ailoviu"
+        android:allowBackup="false"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false">
