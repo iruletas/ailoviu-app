@@ -8,21 +8,12 @@ import 'sync_transport.dart';
 
 /// Transporte sobre Firebase Realtime Database.
 ///
-/// - `send`: escribe el sobre en `inbox/{to}/messages/{id}`. Con la
-///   persistencia en disco de Firebase activada, una escritura hecha
-///   sin red se conserva (incluso si la app se cierra) y se envía al
-///   reconectar.
-/// - `incoming`: escucha `inbox/{deviceId}/messages`, en orden de
-///   `createdAt`, y emite cada sobre. NO lo borra: el borrado ocurre
-///   en [acknowledge], cuando `SyncService` terminó de procesarlo.
-/// - `status`: refleja la conexión real (`.info/connected`).
-///
-/// El sobre viaja cifrado. Firebase nunca ve el contenido.
+/// Además del inbox privado (que ya existía), este transporte
+/// soporta el buzón público `invites/{token}` para el primer
+/// contacto del guest antes de tener el grupo configurado.
 class FirebaseTransport implements SyncTransport {
   FirebaseTransport();
 
-  // Una sola suscripción: bufferean hasta que SyncService escuche.
-  // (Con broadcast, lo emitido durante initialize() se perdía.)
   final _incomingController = StreamController<SyncEnvelope>();
   final _statusController = StreamController<TransportStatus>();
 
@@ -33,8 +24,6 @@ class FirebaseTransport implements SyncTransport {
   StreamSubscription<DatabaseEvent>? _messagesSub;
   StreamSubscription<DatabaseEvent>? _connectionSub;
 
-  /// ids ya emitidos y aún sin confirmar. Evita emitir dos veces el
-  /// mismo sobre durante la sesión.
   final Set<String> _emitted = <String>{};
 
   static const Duration _sendTimeout = Duration(seconds: 8);
@@ -56,8 +45,6 @@ class FirebaseTransport implements SyncTransport {
       storageBucket: config['storageBucket'] as String?,
     );
 
-    // Si ya hay una app de Firebase inicializada (por ejemplo, porque
-    // el transporte se reinicializa), la reusamos.
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(options: options);
     }
@@ -67,15 +54,9 @@ class FirebaseTransport implements SyncTransport {
       databaseURL: config['databaseUrl'] as String?,
     );
 
-    // Debe llamarse antes de cualquier otra operación sobre la
-    // instancia. Si ya se usó, lanza: seguimos sin persistencia.
     try {
       db.setPersistenceEnabled(true);
-    } catch (_) {
-      // Lanza si la instancia ya se usó: el otro aislado (servicio en
-      // segundo plano o app) ya la inicializó con persistencia, porque
-      // todo nuestro código la activa antes de cualquier otro uso.
-    }
+    } catch (_) {}
     _persistenceOn = true;
 
     _db = db;
@@ -88,7 +69,6 @@ class FirebaseTransport implements SyncTransport {
   void _startWatchingConnection() {
     final db = _db;
     if (db == null) return;
-
     _connectionSub = db.ref('.info/connected').onValue.listen(
       (event) {
         if (_statusController.isClosed) return;
@@ -110,8 +90,6 @@ class FirebaseTransport implements SyncTransport {
     final deviceId = _deviceId;
     if (db == null || deviceId == null) return;
 
-    // Ordenado por createdAt para que lo acumulado offline llegue en
-    // orden cronológico y no por el orden aleatorio de los uuid.
     final query = db.ref('inbox/$deviceId/messages').orderByChild('createdAt');
     _messagesSub = query.onChildAdded.listen(
       _onChildAdded,
@@ -124,12 +102,10 @@ class FirebaseTransport implements SyncTransport {
 
   void _onChildAdded(DatabaseEvent event) {
     if (_incomingController.isClosed) return;
-
     final raw = event.snapshot.value;
     final ref = event.snapshot.ref;
 
     if (raw is! Map) {
-      // Basura en el buzón: no hay nada que procesar, se limpia.
       unawaited(ref.remove().catchError((Object _) {}));
       return;
     }
@@ -138,8 +114,6 @@ class FirebaseTransport implements SyncTransport {
     try {
       envelope = SyncEnvelope.fromJson(Map<String, dynamic>.from(raw));
     } catch (_) {
-      // Sobre malformado: nunca se va a poder procesar. Se limpia
-      // para no reintentarlo en cada arranque.
       unawaited(ref.remove().catchError((Object _) {}));
       return;
     }
@@ -153,13 +127,7 @@ class FirebaseTransport implements SyncTransport {
     final db = _db;
     final deviceId = _deviceId;
     if (db == null || deviceId == null) return;
-
     _emitted.remove(envelopeId);
-
-    // Sin await: con persistencia, remove() solo completa cuando el
-    // servidor confirma, y sin red bloquearía la cola de proceso. El
-    // borrado local se aplica al instante y el remoto se sube al
-    // reconectar. Si falla, el sobre se reentrega y se deduplica.
     unawaited(
       db
           .ref('inbox/$deviceId/messages/$envelopeId')
@@ -185,9 +153,6 @@ class FirebaseTransport implements SyncTransport {
           .timeout(_sendTimeout);
       return TransportResult.ok;
     } on TimeoutException {
-      // Sin confirmación del servidor (casi seguro sin red). Con
-      // persistencia en disco, Firebase conserva la escritura y la
-      // sube al reconectar. Sin persistencia no hay garantía.
       if (_persistenceOn) {
         return const TransportResult(accepted: true);
       }
@@ -198,6 +163,89 @@ class FirebaseTransport implements SyncTransport {
     } catch (e) {
       return TransportResult(accepted: false, error: e.toString());
     }
+  }
+
+  // ── Buzón público de invites ────────────────────────────────────
+  //
+  // A diferencia del inbox privado, este buzón no está cifrado por
+  // par (todavía no hay par). El guest escribe su solicitud con el
+  // proof calculado a partir del inviteToken. El host lo lee y lo
+  // valida.
+
+  /// El guest publica su solicitud en `invites/{token}/requests/{deviceId}`.
+  Future<bool> publishInviteRequest({
+    required String inviteToken,
+    required InviteRequest request,
+  }) async {
+    final db = _db;
+    if (db == null) return false;
+    try {
+      await db
+          .ref('invites/$inviteToken/requests/${request.guestDeviceId}')
+          .set(request.toJson())
+          .timeout(_sendTimeout);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// El host escucha las solicitudes entrantes para un inviteToken.
+  Stream<InviteRequest> watchInviteRequests(String inviteToken) {
+    final db = _db;
+    if (db == null) return const Stream.empty();
+    final ref = db.ref('invites/$inviteToken/requests');
+    return ref.onChildAdded.map((event) {
+      final raw = event.snapshot.value;
+      if (raw is! Map) throw StateError('Solicitud malformada');
+      return InviteRequest.fromJson(Map<String, dynamic>.from(raw));
+    });
+  }
+
+  /// El host borra el buzón completo cuando ya procesó todas las
+  /// solicitudes (o cuando expira el QR).
+  Future<void> clearInvite(String inviteToken) async {
+    final db = _db;
+    if (db == null) return;
+    try {
+      await db.ref('invites/$inviteToken').remove();
+    } catch (_) {}
+  }
+
+  /// Barrido de invites huérfanos: el host limpia los que ya
+  /// expiraron. Se llama al arrancar la app.
+  Future<void> sweepExpiredInvites({
+    required Duration maxAge,
+  }) async {
+    final db = _db;
+    if (db == null) return;
+    try {
+      final snapshot = await db.ref('invites').get();
+      if (!snapshot.exists) return;
+      final raw = snapshot.value;
+      if (raw is! Map) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final entry in raw.entries) {
+        final token = entry.key as String;
+        final node = entry.value;
+        if (node is! Map) continue;
+        final requests = node['requests'];
+        if (requests is! Map) continue;
+        var allOld = true;
+        for (final r in requests.values) {
+          if (r is! Map) continue;
+          final ts = r['createdAt'] as int?;
+          if (ts == null) continue;
+          if (now - ts < maxAge.inMilliseconds) {
+            allOld = false;
+            break;
+          }
+        }
+        if (allOld) {
+          await db.ref('invites/$token').remove();
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -212,8 +260,6 @@ class FirebaseTransport implements SyncTransport {
     await _connectionSub?.cancel();
     _messagesSub = null;
     _connectionSub = null;
-    // Sin await: en un StreamController de una sola suscripción, el
-    // Future de close() no completa si nadie escuchó.
     unawaited(_incomingController.close());
     unawaited(_statusController.close());
     _emitted.clear();
