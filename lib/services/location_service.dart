@@ -14,6 +14,7 @@ enum LocationResult {
   permissionDenied,
   permissionDeniedForever,
   timeout,
+  stale,
   error,
 }
 
@@ -29,13 +30,22 @@ class LocationAttempt {
 /// Servicio de ubicación.
 ///
 /// - [ensurePermission]: chequea y pide permisos si es necesario.
-/// - [getCurrentLocation]: obtiene la ubicación ahora.
+/// - [getCurrentLocation]: obtiene la ubicación ahora (puede aceptar caché).
+/// - [getFreshLocation]: obtiene una ubicación fresca, rechazando caché vieja.
 /// - [distanceKmBetween]: distancia en km entre dos coordenadas.
 ///
 /// El envío por sync de las ubicaciones NO se hace aquí: eso lo hace
-/// `background_sync.dart` cuando recibe cada nueva ubicación.
+/// `LocationsNotifier` cuando recibe cada nueva ubicación.
 class LocationService {
   LocationService();
+
+  /// Edad máxima aceptable para considerar una posición "fresca".
+  /// Si el OS devuelve una posición más vieja que esto, se descarta.
+  static const Duration maxStaleAge = Duration(minutes: 2);
+
+  /// Timeout para [getFreshLocation]. Alto porque con `high` y GPS
+  /// frío el primer fix puede tardar.
+  static const Duration freshTimeout = Duration(seconds: 30);
 
   /// Asegura que haya permiso de ubicación concedido.
   ///
@@ -48,13 +58,11 @@ class LocationService {
   ///   concedido).
   /// - Si no hay permiso, lo pide una vez.
   Future<LocationResult> ensurePermission() async {
-    // 1. Servicio del sistema encendido.
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return LocationResult.serviceDisabled;
     }
 
-    // 2. Permiso actual.
     var permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.deniedForever) {
@@ -62,7 +70,6 @@ class LocationService {
     }
 
     if (permission == LocationPermission.denied) {
-      // Pedir una vez.
       permission = await Geolocator.requestPermission();
 
       if (permission == LocationPermission.deniedForever) {
@@ -73,7 +80,6 @@ class LocationService {
       }
     }
 
-    // 3. Con `whileInUse` o `always` ya sirve para el mapa.
     if (permission == LocationPermission.whileInUse ||
         permission == LocationPermission.always) {
       return LocationResult.success;
@@ -101,7 +107,9 @@ class LocationService {
   /// Obtiene la ubicación actual.
   ///
   /// No pide permisos: el caller debe haber llamado [ensurePermission]
-  /// antes. Devuelve [LocationAttempt] con el resultado y la ubicación.
+  /// antes. Puede devolver una posición cacheada del OS (no valida
+  /// [PartnerLocation.capturedAt]). Para uso "fresco", usar
+  /// [getFreshLocation].
   Future<LocationAttempt> getCurrentLocation({
     required String deviceId,
     Duration timeout = const Duration(seconds: 15),
@@ -119,7 +127,51 @@ class LocationService {
           deviceId: deviceId,
           latitude: position.latitude,
           longitude: position.longitude,
-          capturedAt: DateTime.now(),
+          capturedAt: position.timestamp,
+        ),
+      );
+    } on TimeoutException {
+      return const LocationAttempt(result: LocationResult.timeout);
+    } catch (_) {
+      return const LocationAttempt(result: LocationResult.error);
+    }
+  }
+
+  /// Obtiene una ubicación "fresca" para publicar en el mapa.
+  ///
+  /// A diferencia de [getCurrentLocation], esta variante:
+  /// - Usa `LocationAccuracy.high`.
+  /// - Da más tiempo (30s) para que el GPS tenga chance de un fix real.
+  /// - **Rechaza** posiciones cuyo `timestamp` sea más viejo que
+  ///   [maxStaleAge], devolviendo [LocationResult.stale]. Así nunca
+  ///   publicamos caché del OS como si fuera nueva.
+  ///
+  /// No pide permisos: el caller debe haber llamado [ensurePermission]
+  /// antes.
+  Future<LocationAttempt> getFreshLocation({
+    required String deviceId,
+    Duration timeout = freshTimeout,
+  }) async {
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: timeout,
+        ),
+      );
+
+      final age = DateTime.now().difference(position.timestamp);
+      if (age > maxStaleAge) {
+        return const LocationAttempt(result: LocationResult.stale);
+      }
+
+      return LocationAttempt(
+        result: LocationResult.success,
+        location: PartnerLocation(
+          deviceId: deviceId,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          capturedAt: position.timestamp,
         ),
       );
     } on TimeoutException {
@@ -160,7 +212,7 @@ class LocationService {
         deviceId: deviceId,
         latitude: position.latitude,
         longitude: position.longitude,
-        capturedAt: DateTime.now(),
+        capturedAt: position.timestamp,
       );
     }
   }
