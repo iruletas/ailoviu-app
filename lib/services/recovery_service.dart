@@ -4,16 +4,15 @@ import 'crypto_service.dart';
 import 'key_store.dart';
 import 'linking_service.dart';
 
-/// Orquesta el flujo de recuperación de cuenta (A + B + C, con C
-/// obligatorio).
+/// Orquesta el flujo de recuperación (A + B + C).
 ///
-/// - El **guest** (dispositivo nuevo) arma la solicitud con
-///   `buildRequest()`.
-/// - Cada **miembro existente** verifica A (respuesta clave
-///   ingresada manualmente por él) y B (recovery pin hash) con
-///   `verifyFactors()`.
-/// - Cuando **todos** aprueban, el host (`promoteRecovery`) aplica
-///   el reemplazo: borra al viejo y acepta al nuevo.
+/// - **A** (pregunta clave): el miembro existente **escribe la
+///   respuesta** en el diálogo. No la manda el guest, porque eso
+///   sería un ataque trivial. La app hashea y compara.
+/// - **B** (PIN viejo): el guest manda `recoveryPinHash`. El host
+///   lo compara contra `peerRecoveryPins[oldDeviceId]`.
+/// - **C** (aprobación de todos): siempre. Lo maneja el router con
+///   la votación.
 class RecoveryService {
   RecoveryService({
     required KeyStore keyStore,
@@ -28,9 +27,10 @@ class RecoveryService {
   final LinkingService _linking;
 
   /// Arma la solicitud de recuperación desde el dispositivo nuevo.
-  /// El `recoveryPinHash` es opcional: si el usuario recuerda el PIN,
-  /// lo mandamos como factor B. Si no, la recuperación va solo con
-  /// A + C.
+  ///
+  /// - `recoveryPin` es opcional. Si viene, se calcula el hash y se
+  ///   incluye en la request (factor B).
+  /// - La respuesta (factor A) **no** se incluye: el host la pide.
   Future<InviteRequest> buildRequest({
     required String groupId,
     required String myDeviceId,
@@ -38,7 +38,7 @@ class RecoveryService {
     required String displayName,
     required String oldDeviceId,
     String? recoveryPin,
-  }) {
+  }) async {
     String? pinHash;
     if (recoveryPin != null && recoveryPin.isNotEmpty) {
       pinHash = _crypto.hashRecoveryPin(
@@ -46,35 +46,29 @@ class RecoveryService {
         deviceId: oldDeviceId,
       );
     }
-    return Future.value(
-      InviteRequest(
-        groupId: groupId,
-        guestDeviceId: myDeviceId,
-        guestPublicKeyBase64: myPublicKeyBase64,
-        displayName: displayName.trim(),
-        proof: '', // no aplica en recovery: la verificación es A+B
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        recoveryPinHash: pinHash,
-        recoveryOldDeviceId: oldDeviceId,
-      ),
+    return InviteRequest(
+      groupId: groupId,
+      guestDeviceId: myDeviceId,
+      guestPublicKeyBase64: myPublicKeyBase64,
+      displayName: displayName.trim(),
+      proof: '',
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      recoveryPinHash: pinHash,
+      recoveryOldDeviceId: oldDeviceId,
     );
   }
 
-  /// Verificación de factores en un miembro existente. Se llama
-  /// cuando el miembro abre el diálogo de la solicitud.
+  /// Verificación de factores en un miembro existente.
   ///
-  /// - `answerFromMember`: la respuesta que el miembro **escribe en
-  ///   el diálogo**. No viene del guest.
-  /// - `recoveryPinHashFromGuest`: el hash del PIN viejo, si el guest
-  ///   lo mandó.
+  /// - `answerFromMember`: la respuesta que el miembro escribe en el
+  ///   diálogo. `null` si no la escribió.
+  /// - `recoveryPinHashFromGuest`: el hash del PIN viejo, si el
+  ///   guest lo mandó.
   ///
   /// Reglas:
-  /// - **C siempre presente** (lo maneja el router con la votación).
-  /// - A se verifica si el miembro escribe la respuesta correcta.
-  /// - B se verifica si el guest mandó el hash y el miembro tiene
-  ///   `peerRecoveryPins[oldDeviceId]`.
-  /// - Aceptable: A ✓ y B ✓; A ✓ sin B; B ✓ sin A. Inaceptable: ni
-  ///   A ni B.
+  /// - **C siempre presente** (la votación la maneja el router).
+  /// - Aceptable: A ✓ y B ✓; A ✓ sin B; B ✓ sin A.
+  /// - Inaceptable: ni A ni B.
   Future<RecoveryFactorResult> verifyFactors({
     required String recoveryOldDeviceId,
     required String? answerFromMember,
@@ -82,7 +76,7 @@ class RecoveryService {
   }) async {
     final question = await _keyStore.getRecoveryQuestion();
     if (question == null) {
-      return RecoveryFactorResult(
+      return const RecoveryFactorResult(
         aOk: false,
         bOk: false,
         detail: 'No hay pregunta de recuperación configurada',
@@ -108,9 +102,7 @@ class RecoveryService {
       }
     }
 
-    final cOk = true; // siempre, por diseño
-    final allowed = (aOk || bOk) && cOk;
-
+    final allowed = aOk || bOk;
     return RecoveryFactorResult(
       aOk: aOk,
       bOk: bOk,
@@ -121,7 +113,7 @@ class RecoveryService {
   }
 
   /// El host promueve la recuperación: borra al viejo y acepta al
-  /// nuevo. Devuelve el `GroupMember` del nuevo.
+  /// nuevo.
   Future<GroupMember> promoteRecovery({
     required String oldDeviceId,
     required String newDeviceId,
@@ -168,6 +160,5 @@ class RecoveryFactorResult {
     required this.detail,
   });
 
-  /// `true` si A o B pasaron (con C implícito).
   bool get isAllowed => aOk || bOk;
 }
