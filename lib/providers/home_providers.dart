@@ -368,4 +368,3 @@ Map<String, dynamic> locationToSyncPayload(PartnerLocation loc) => {
       'subtype': 'location',
       'location': loc.toJson(),
     };
-}
