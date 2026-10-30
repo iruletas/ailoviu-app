@@ -106,7 +106,7 @@ class SyncRouter {
   Future<void> _handleJoinRequest(SyncEvent event) async {
     final request = _decodeInviteRequest(event.payload.data);
     if (request == null) return;
-    await _ref.read(pendingJoinsProvider.notifier).add(request);
+    _ref.read(pendingJoinsProvider.notifier).add(request);
 
     // Si soy el host, reenvío a los demás miembros (que el guest no
     // conoce todavía) para que voten.
@@ -183,12 +183,12 @@ class SyncRouter {
     }
 
     await _reloadSync();
-    await _ref.read(pendingJoinsProvider.notifier).remove(guestDeviceId);
+    _ref.read(pendingJoinsProvider.notifier).remove(guestDeviceId);
   }
 
   Future<void> _rejectJoin(String guestDeviceId, String? groupId) async {
     final request = _ref.read(pendingJoinsProvider)[guestDeviceId]?.request;
-    await _ref.read(pendingJoinsProvider.notifier).remove(guestDeviceId);
+    _ref.read(pendingJoinsProvider.notifier).remove(guestDeviceId);
     if (request == null) return;
     try {
       final sync = await _ref.read(syncServiceProvider.future);
@@ -210,11 +210,11 @@ class SyncRouter {
       await _ref.read(linkingServiceProvider).acceptMember(newMember: m);
     }
     await _reloadSync();
-    await _ref.read(pendingJoinsProvider.notifier).clearAll();
+    _ref.read(pendingJoinsProvider.notifier).clearAll();
   }
 
   Future<void> _handleMemberReject(SyncEvent event) async {
-    await _ref.read(pendingJoinsProvider.notifier).clearAll();
+    _ref.read(pendingJoinsProvider.notifier).clearAll();
   }
 
   // ── Recuperación ────────────────────────────────────────────────
@@ -222,7 +222,7 @@ class SyncRouter {
   Future<void> _handleRecoveryRequest(SyncEvent event) async {
     final request = _decodeInviteRequest(event.payload.data);
     if (request == null) return;
-    await _ref.read(pendingRecoveriesProvider.notifier).add(request);
+    _ref.read(pendingRecoveriesProvider.notifier).add(request);
 
     if (!await _amIHost()) return;
     final sync = await _ref.read(syncServiceProvider.future);
@@ -253,7 +253,7 @@ class SyncRouter {
     if (_ref
         .read(pendingRecoveriesProvider.notifier)
         .hasAnyRejection(guestDeviceId)) {
-      await _ref
+      _ref
           .read(pendingRecoveriesProvider.notifier)
           .remove(guestDeviceId);
       return;
@@ -302,7 +302,7 @@ class SyncRouter {
     }
 
     await _reloadSync();
-    await _ref.read(pendingRecoveriesProvider.notifier).clearAll();
+    _ref.read(pendingRecoveriesProvider.notifier).clearAll();
   }
 
   Future<void> _handleRecoveryAccept(SyncEvent event) async {
@@ -321,7 +321,7 @@ class SyncRouter {
           newRecoveryPinHash: newMember.recoveryPinHash,
         );
     await _reloadSync();
-    await _ref.read(pendingRecoveriesProvider.notifier).clearAll();
+    _ref.read(pendingRecoveriesProvider.notifier).clearAll();
   }
 
   Future<void> _handleRecoveryPinUpdate(SyncEvent event) async {
