@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -30,6 +31,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
   late final AnimationController _jitterController;
   late final AnimationController _cooldownController;
 
+  Timer? _toastTimer;
   bool _showToast = false;
   String _toastText = '';
   IconData _toastIcon = Icons.bolt_rounded;
@@ -54,6 +56,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
 
   @override
   void dispose() {
+    _toastTimer?.cancel();
     _pressController.dispose();
     _jitterController.dispose();
     _cooldownController.dispose();
@@ -98,7 +101,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
     await _jitterController.forward(from: 0);
     HapticFeedback.heavyImpact();
 
-    final sent = await ref.read(buzzProvider.notifier).tryBuzz(ref: ref);
+    final sent = await ref.read(buzzProvider.notifier).tryBuzz();
     if (!mounted) return;
 
     if (sent) {
@@ -109,12 +112,13 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
   }
 
   void _showToastMessage(String text, IconData icon) {
+    _toastTimer?.cancel();
     setState(() {
       _toastText = text;
       _toastIcon = icon;
       _showToast = true;
     });
-    Future.delayed(const Duration(milliseconds: 2200), () {
+    _toastTimer = Timer(const Duration(milliseconds: 2200), () {
       if (mounted) setState(() => _showToast = false);
     });
   }
@@ -133,7 +137,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
-        // ── Botón principal ────────────────────────────────────────
+        // ── Botón principal (hit target = 56×56, cubre el anillo) ──
         AnimatedBuilder(
           animation: Listenable.merge([
             _pressController,
@@ -150,28 +154,28 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
               offset: Offset(jitterX, 0),
               child: Transform.scale(
                 scale: pressScale,
-                child: SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      if (cooldown != null)
-                        SizedBox(
-                          width: 56,
-                          height: 56,
-                          child: CircularProgressIndicator(
-                            value: _cooldownController.value,
-                            strokeWidth: 2.5,
-                            strokeCap: StrokeCap.round,
-                            color: scheme.primary,
-                            backgroundColor: Colors.transparent,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _onTap,
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (cooldown != null)
+                          SizedBox(
+                            width: 56,
+                            height: 56,
+                            child: CircularProgressIndicator(
+                              value: _cooldownController.value,
+                              strokeWidth: 2.5,
+                              strokeCap: StrokeCap.round,
+                              color: scheme.primary,
+                              backgroundColor: Colors.transparent,
+                            ),
                           ),
-                        ),
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _onTap,
-                        child: AnimatedContainer(
+                        AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           width: 52,
                           height: 52,
@@ -179,7 +183,7 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
                             color: canBuzz
                                 ? scheme.primaryContainer
                                 : scheme.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(18),
                             boxShadow: canBuzz
                                 ? [
                                     BoxShadow(
@@ -201,8 +205,8 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -237,10 +241,6 @@ class _BuzzButtonState extends ConsumerState<BuzzButton>
         ),
 
         // ── Toast a la DERECHA del botón ───────────────────────────
-        // No se desborda: el ancla es el borde derecho del botón y el
-        // texto se renderiza con mainAxisSize.min. Como está dentro de
-        // un Positioned con `left` y no `right`, crece hacia la derecha
-        // sin límite de ancho del botón.
         if (_showToast)
           Positioned(
             left: 60,
