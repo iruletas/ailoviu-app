@@ -1,36 +1,42 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/group_models.dart';
 import '../models/sync_models.dart';
 import '../services/crypto_service.dart';
 import '../services/firebase_transport.dart';
+import '../services/invite_service.dart';
 import '../services/key_store.dart';
+import '../services/linking_service.dart';
 import '../services/notification_service.dart';
 import '../services/push_service.dart';
+import '../services/sync_router.dart';
 import '../services/sync_service.dart';
 import '../services/transport_config.dart';
 
-/// [KeyStore] único para toda la app.
 final keyStoreProvider = Provider<KeyStore>((ref) => KeyStore());
 
-/// [CryptoService] único.
 final cryptoServiceProvider = Provider<CryptoService>(
   (ref) => CryptoService(),
 );
 
-/// [NotificationService] único.
 final notificationServiceProvider = Provider<NotificationService>(
   (ref) => NotificationService(),
 );
 
-/// [PushService] único.
-final pushServiceProvider = Provider<PushService>(
-  (ref) => PushService(),
+final pushServiceProvider = Provider<PushService>((ref) => PushService());
+
+final inviteServiceProvider = Provider<InviteService>(
+  (ref) => InviteService(ref.watch(cryptoServiceProvider)),
 );
 
-/// [SyncService] único, inicializado de forma asíncrona.
-///
-/// El provider es `FutureProvider` porque `initialize()` es async y
-/// necesita leer de [KeyStore].
+final linkingServiceProvider = Provider<LinkingService>(
+  (ref) => LinkingService(
+    keyStore: ref.watch(keyStoreProvider),
+    crypto: ref.watch(cryptoServiceProvider),
+    inviteService: ref.watch(inviteServiceProvider),
+  ),
+);
+
 final syncServiceProvider = FutureProvider<SyncService>((ref) async {
   final service = SyncService(
     keyStore: ref.watch(keyStoreProvider),
@@ -42,28 +48,37 @@ final syncServiceProvider = FutureProvider<SyncService>((ref) async {
   return service;
 });
 
-/// Stream de eventos de sync (sobres entrantes ya descifrados).
 final syncEventsProvider = StreamProvider<SyncEvent>((ref) {
   final service = ref.watch(syncServiceProvider).valueOrNull;
   if (service == null) return const Stream.empty();
   return service.events;
 });
 
-/// Estado actual del sync.
 final syncStatusProvider = StreamProvider<SyncStatus>((ref) {
   final service = ref.watch(syncServiceProvider).valueOrNull;
   if (service == null) return Stream.value(SyncStatus.unpaired);
   return service.status;
 });
 
-/// Config del transporte actual.
 final transportConfigProvider = FutureProvider<TransportConfig>((ref) async {
-  final keyStore = ref.watch(keyStoreProvider);
-  return TransportConfig.load(keyStore);
+  return TransportConfig.load(ref.watch(keyStoreProvider));
 });
 
-/// `true` si la app está emparejada.
-final isPairedProvider = FutureProvider<bool>((ref) async {
-  final keyStore = ref.watch(keyStoreProvider);
-  return keyStore.isPaired();
+/// Snapshot del grupo.
+final groupSnapshotProvider = FutureProvider<GroupSnapshot>((ref) async {
+  return ref.watch(linkingServiceProvider).snapshot();
+});
+
+/// `true` si hay al menos otro miembro aprobado.
+final isLinkedProvider = FutureProvider<bool>((ref) async {
+  final group = await ref.watch(groupSnapshotProvider.future);
+  return group.isLinked;
+});
+
+/// Router de sync. Se mantiene vivo mientras `app.dart` lo observe.
+final syncRouterProvider = Provider<SyncRouter>((ref) {
+  final router = SyncRouter(ref);
+  router.start();
+  ref.onDispose(router.dispose);
+  return router;
 });
