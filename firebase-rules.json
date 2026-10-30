@@ -1,0 +1,27 @@
+{
+  "rules": {
+    "inbox": {
+      "$deviceId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['v', 'id', 'from', 'to', 'type', 'createdAt', 'nonce', 'ciphertext', 'signature'])"
+          }
+        }
+      }
+    },
+    "invites": {
+      "$inviteToken": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.hasChild('requests') || !newData.exists()",
+        "requests": {
+          "$guestDeviceId": {
+            ".validate": "newData.hasChildren(['groupId', 'guestDeviceId', 'guestPublicKeyBase64', 'displayName', 'proof', 'createdAt'])"
+          }
+        }
+      }
+    }
+  }
+}
