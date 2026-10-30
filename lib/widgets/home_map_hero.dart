@@ -10,6 +10,7 @@ import '../core/map_style.dart';
 import '../models/home_models.dart';
 import '../providers/home_providers.dart';
 import '../providers/relationship_providers.dart';
+import '../providers/settings_providers.dart'; // NUEVO IMPORT
 import '../services/location_service.dart';
 
 /// Mapa hero de Hogar.
@@ -21,7 +22,6 @@ class HomeMapHero extends ConsumerStatefulWidget {
   });
 
   final double height;
-
   final VoidCallback? onEditStatus;
 
   @override
@@ -213,28 +213,46 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 
   Widget _buildMap(BuildContext context, LocationsSnapshot locations) {
     final center = _centerFor(locations);
+    
+    // Leemos el tema y la configuración AMOLED
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isAmoled = isDark && ref.watch(settingsProvider).amoled;
 
-    return ColorFiltered(
-      colorFilter: const ColorFilter.matrix(MapStyle.colorMatrix),
-      child: FlutterMap(
-        options: MapOptions(
-          initialCenter: center,
-          initialZoom: MapStyle.initialZoom,
-          minZoom: MapStyle.minZoom,
-          maxZoom: MapStyle.maxZoom,
-          interactionOptions: const InteractionOptions(
-            flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
-          ),
+    final map = FlutterMap(
+      options: MapOptions(
+        initialCenter: center,
+        initialZoom: MapStyle.initialZoom,
+        minZoom: MapStyle.minZoom,
+        maxZoom: MapStyle.maxZoom,
+        // Fondo dinámico para evitar el destello blanco
+        backgroundColor: isAmoled
+            ? MapStyle.bgAmoled
+            : (isDark ? MapStyle.bgDark : MapStyle.bgLight),
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
         ),
-        children: [
-          TileLayer(
-            urlTemplate: MapStyle.tileUrl,
-            userAgentPackageName: 'com.iruletas.ailoviu',
-          ),
-          if (locations.canDrawLines) _buildLinesLayer(locations),
-          _buildAvatarsLayer(context, locations),
-        ],
       ),
+      children: [
+        TileLayer(
+          // CARTO Voyager (claro) o Dark Matter (oscuro)
+          urlTemplate: isDark ? MapStyle.tileUrlDark : MapStyle.tileUrl,
+          subdomains: const ['a', 'b', 'c', 'd'],
+          retinaMode: RetinaMode.isHighDensity(context),
+          userAgentPackageName: 'com.iruletas.ailoviu',
+        ),
+        if (locations.canDrawLines) _buildLinesLayer(locations),
+        _buildAvatarsLayer(context, locations),
+        const SimpleAttributionWidget(
+          source: Text(MapStyle.attribution),
+        ),
+      ],
+    );
+
+    // Si es AMOLED, oscurecemos un poco más el mapa oscuro
+    if (!isAmoled) return map;
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix(MapStyle.amoledMatrix),
+      child: map,
     );
   }
 
@@ -288,7 +306,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       final name = i < names.length ? names[i] : '';
       final isMe = loc.deviceId == snapshot.myDeviceId;
       
-      // Si es mi avatar, chequeo myStatus. Si no, busco en partnerStatuses.
       final hasStatus = isMe 
           ? myStatus != null 
           : partnerStatuses.containsKey(loc.deviceId);
@@ -538,7 +555,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
           ),
         ),
 
-        // Indicador de estado (ahora sí aparece si hay estado)
         if (widget.hasStatus)
           Positioned(
             top: 0,
@@ -554,7 +570,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
             ),
           ),
 
-        // Badge "＋" para mi avatar
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
             bottom: -2,
