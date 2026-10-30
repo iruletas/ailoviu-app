@@ -91,7 +91,7 @@ Hoy está en `packages/` pero no se usa.
 
 **Por qué no hoy:** no hay pantalla que use progreso todavía.
 
-**Qué desbloquea:** `play_screen.dart` (juegos) o reproductor de
+**Qué desbloquea:** `games_screen.dart` (juegos) o reproductor de
 recuerdos con `MorphingPlayPauseButton`.
 
 ---
@@ -200,6 +200,34 @@ onboarding.
 
 ---
 
+## 16. Pulido visual avanzado de Hogar (de Gemini)
+**Qué:** cosas que Gemini propuso y no implementamos para no inflar
+el código:
+- Líneas de conexión con gradiente + pulso de luz viajero.
+- Radar pulse halo concéntrico en el avatar propio.
+- Cámara elástica (spring focus) al tocar el badge de distancia o un avatar.
+- Iconos poéticos (`auto_awesome`, `water_drop`) en los placeholders en vez de `construction_rounded`.
+
+**Por qué no hoy:** el mapa funciona, pero las animaciones agregan complejidad. Se puede abordar cuando el diseño base esté asentado.
+
+**Dónde vivirá:** `lib/widgets/home_map_hero.dart` y los placeholders.
+
+---
+
+## 17. Mover BuzzButton al shell
+**Qué:** hoy vive dentro de `home_screen.dart` superpuesto al scroll. Debería ir en `main_shell.dart`, junto al botón de ajustes, para que no se mueva con el scroll.
+
+**Dónde vivirá:** `lib/screens/main_shell.dart`.
+
+---
+
+## 18. Conectar `onTap` de `DaysTogetherCard`
+**Qué:** hoy `onTap` está vacío. Debería abrir `RelationshipScreen` cuando exista el flujo de "editar fecha desde Hogar".
+
+**Dónde vivirá:** `lib/screens/home_screen.dart` (el callback) y `lib/screens/relationship_screen.dart` (la pantalla).
+
+---
+
 ## Notas (no son ítems, son avisos para no tropezar)
 
 ### Warning de KGP en `package_info_plus`
@@ -229,8 +257,9 @@ sobrescribe antes de compilar.
 Cuando uses `ref.read(provider.future)` o `ref.watch(provider)` y
 vayas a llamar métodos sobre el resultado, **importa el archivo del
 tipo**. Sin el import, Dart cae a `Object?` y los métodos no
-resuelven. (Aprendido con `AuthSession` en `auth_gate.dart` y con
-`AuthService` en `security_screen.dart`).
+resuelven. (Aprendido con `AuthSession` en `auth_gate.dart`, con
+`AuthService` en `security_screen.dart`, y con `LocationResult` en
+`home_map_hero.dart`).
 
 ### Firma de APK en Android
 Si Android dice "paquete no válido", es casi seguro que la app
@@ -238,3 +267,15 @@ instalada tiene una firma distinta (de debug, o de un keystore viejo).
 Solución: desinstalar la versión vieja y volver a instalar. Las
 actualizaciones futuras (con el mismo keystore) ya no pedirán
 desinstalar.
+
+### Bug de permisos en Android
+`Geolocator.requestPermission()` devuelve `denied` si se llama cuando
+el permiso ya estaba concedido. **Siempre** llamar `checkPermission()`
+antes. Eso fue lo que causó el problema del mapa que no pedía permisos
+(se solucionó en `LocationService.ensurePermission()`).
+
+### `flutter create` en CI
+El workflow `build.yml` corre `flutter create --platforms=android ...`
+antes de cada build para regenerar recursos (`mipmap`, `LaunchTheme`).
+Después restaura `android/app/build.gradle.kts` con `git checkout` para
+no perder la firma. **No borrar ese step.**
