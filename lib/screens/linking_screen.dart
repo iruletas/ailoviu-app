@@ -99,7 +99,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     setState(() => _busy = true);
 
     final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const _QrScannerScreen()),
+      MaterialPageRoute(builder: (_) => const QrScannerScreen()),
     );
     if (scanned == null || !mounted) {
       setState(() => _busy = false);
@@ -1270,17 +1270,17 @@ class _DisplayNameDialogState extends State<_DisplayNameDialog> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Scanner M3E
+// Scanner M3E (público: lo reutiliza recovery_screen)
 // ══════════════════════════════════════════════════════════════════════
 
-class _QrScannerScreen extends StatefulWidget {
-  const _QrScannerScreen();
+class QrScannerScreen extends StatefulWidget {
+  const QrScannerScreen({super.key});
 
   @override
-  State<_QrScannerScreen> createState() => _QrScannerScreenState();
+  State<QrScannerScreen> createState() => _QrScannerScreenState();
 }
 
-class _QrScannerScreenState extends State<_QrScannerScreen>
+class _QrScannerScreenState extends State<QrScannerScreen>
     with SingleTickerProviderStateMixin {
   final _controller = MobileScannerController();
   late final AnimationController _laserController;
