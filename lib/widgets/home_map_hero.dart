@@ -625,7 +625,7 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
             bottom: -4,
-            right: -10, // Desplazado un poco a la derecha para que quepa el texto
+            right: -10,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _badgePressed = true),
@@ -652,10 +652,10 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                       ? Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Truncamos el texto si es muy largo
+                            // Truncamos el texto si es muy largo (20 letras)
                             Text(
-                              statusText.length > 10 
-                                  ? '${statusText.substring(0, 10)}...' 
+                              statusText.length > 20 
+                                  ? '${statusText.substring(0, 20)}...' 
                                   : statusText,
                               style: TextStyle(
                                 fontSize: 10,
