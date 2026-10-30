@@ -164,7 +164,7 @@ class BackgroundSyncService {
     try {
       if (!await isEnabled()) return;
       final keyStore = KeyStore();
-      if (!await keyStore.isPaired()) return;
+      if (!await keyStore.isLinked()) return;
       final config = await TransportConfig.load(keyStore);
       if (!config.isConfigured) return;
       await start();
