@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 
@@ -47,6 +48,19 @@ class FirebaseTransport implements SyncTransport {
 
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(options: options);
+    }
+
+    // Anónimo: el guest necesita auth para escribir en invites/{token}.
+    // El host también, pero ya está autenticado por el mismo flujo.
+    final auth = FirebaseAuth.instance;
+    if (auth.currentUser == null) {
+      try {
+        await auth.signInAnonymously();
+      } catch (_) {
+        // Sin auth el inbox privado igual funciona (reglas: auth != null).
+        // El buzón público de invites va a fallar. Es aceptable si el
+        // guest ya está vinculado.
+      }
     }
 
     final db = FirebaseDatabase.instanceFor(
