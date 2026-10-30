@@ -210,6 +210,50 @@ class SyncService {
     return sentIds;
   }
 
+  /// Publica una solicitud de join en el buzón público del inviteToken.
+  /// El guest lo llama después de `prepareJoin`. Devuelve true si se
+  /// publicó (no garantiza que el host lo lea).
+  Future<bool> publishInvite({
+    required String inviteToken,
+    required InviteRequest request,
+  }) async {
+    final transport = _transport;
+    if (transport is FirebaseTransport) {
+      return transport.publishInviteRequest(
+        inviteToken: inviteToken,
+        request: request,
+      );
+    }
+    // Fallback: si no hay transport inicializado todavía, intentamos
+    // inicializar uno a partir del transport config (el guest ya lo
+    // tiene en Keystore después de prepareJoin).
+    final config = await TransportConfig.load(_keyStore);
+    if (config is! FirebaseTransportConfig) return false;
+    final tempTransport = FirebaseTransport();
+    try {
+      await tempTransport.initialize({
+        'deviceId': _deviceId,
+        ...config.toJson(),
+      });
+      final ok = await tempTransport.publishInviteRequest(
+        inviteToken: inviteToken,
+        request: request,
+      );
+      await tempTransport.dispose();
+      return ok;
+    } catch (_) {
+      await tempTransport.dispose();
+      return false;
+    }
+  }
+
+  /// Publica una solicitud de recuperación en el mismo buzón.
+  /// Idéntico a publishInvite pero semánticamente distinto.
+  Future<bool> publishRecovery({
+    required String inviteToken,
+    required InviteRequest request,
+  }) => publishInvite(inviteToken: inviteToken, request: request);
+
   Future<void> requestFullSync() async {
     await enqueue(
       type: SyncType.syncRequest,
