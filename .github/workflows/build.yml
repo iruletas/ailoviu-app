@@ -83,7 +83,6 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      # NUEVO: cache de NDK (evita descargar 1.5 GB cada build)
       - name: Cache de NDK
         uses: actions/cache@v4
         with:
@@ -132,7 +131,6 @@ jobs:
       - name: Descargar dependencias
         run: flutter pub get
 
-      # COMPILAR CON FILTRO DE LOGS CORREGIDO
       - name: Compilar APK
         run: |
           set -o pipefail
@@ -145,7 +143,6 @@ jobs:
             | grep -v "^Note: Some input files" \
             | grep -v "^3 warnings$"
 
-      # NUEVO: subir el log si el build falla (por si el filtro se comió algo)
       - name: Subir log en caso de fallo
         if: failure()
         uses: actions/upload-artifact@v4
