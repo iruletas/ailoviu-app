@@ -6,7 +6,7 @@ class MapStyle {
 
   // ── URLs de los tiles ──────────────────────────────────────────────
   
-  /// CARTO Voyager (claro). Limpio, estilo Google Maps.
+  /// CARTO Voyager (claro).
   static String getTileUrl(String key) {
     if (key.isEmpty) return osmTileUrl;
     return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=$key';
