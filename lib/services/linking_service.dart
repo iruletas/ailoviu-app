@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:uuid/uuid.dart';
 
 import '../models/group_models.dart';
@@ -10,9 +8,16 @@ import 'key_store.dart';
 
 /// Servicio de vinculación de grupo (N miembros).
 ///
-/// Es la pieza que el host, el guest y los miembros existentes usan
-/// para crear el grupo, unirse, aprobar y expulsar. La UI y el
-/// router lo llaman; él no manda sobres por su cuenta.
+/// - [createGroup]: el host crea el grupo (requiere Firebase
+///   configurado y pregunta de recuperación).
+/// - [prepareJoin]: el guest descifra el QR y prepara su solicitud.
+/// - [acceptMember] / [rejectMember]: miembro aceptado/rechazado.
+/// - [removeMember]: expulsa a alguien.
+/// - [setLocalRecoveryPin]: factor B.
+/// - [setRecoveryQuestion] / [applyRecoveryQuestion]: factor A.
+///
+/// La verificación de A y B en una recuperación vive en
+/// `RecoveryService`, no acá.
 class LinkingService {
   LinkingService({
     required KeyStore keyStore,
@@ -31,8 +36,6 @@ class LinkingService {
   // Identidad y grupo
   // ══════════════════════════════════════════════════════════════════
 
-  /// Asegura que el dispositivo tenga deviceId + par X25519.
-  /// Devuelve `(deviceId, publicKeyBase64)`.
   Future<({String deviceId, String publicKeyBase64})>
       ensureLocalIdentity() async {
     var deviceId = await _keyStore.getDeviceId();
@@ -53,7 +56,6 @@ class LinkingService {
     return (deviceId: deviceId, publicKeyBase64: publicKey);
   }
 
-  /// Estado actual del grupo, leído de Keystore.
   Future<GroupSnapshot> snapshot() async {
     final myId = await _keyStore.getDeviceId() ?? '';
     return GroupSnapshot(
@@ -68,14 +70,6 @@ class LinkingService {
   // Crear grupo (host)
   // ══════════════════════════════════════════════════════════════════
 
-  /// Crea el grupo. Requiere:
-  /// - `transportConfig` ya persistido (Firebase configurado).
-  /// - `recoveryQuestionPlain` (la pregunta, obligatoria al crear).
-  /// - `recoveryAnswer` (la respuesta en claro; se hashea y se
-  ///   descarta).
-  ///
-  /// Devuelve el QR de invitación ya construido (con las
-  /// credenciales cifradas) para que la UI lo muestre.
   Future<CreateGroupResult> createGroup({
     required String displayName,
     required String recoveryQuestionPlain,
@@ -88,7 +82,6 @@ class LinkingService {
       if (members.length > 1) {
         throw LinkingException('Ya hay un grupo activo en este dispositivo');
       }
-      // Grupo huérfano (solo yo): lo limpiamos y empezamos de cero.
       await _keyStore.clearGroup();
     }
 
@@ -101,7 +94,6 @@ class LinkingService {
 
     final identity = await ensureLocalIdentity();
 
-    // 1. Pregunta de recuperación.
     final salt = _crypto.generateSaltBase64();
     final answerHash = _crypto.hashRecoveryAnswer(
       answer: recoveryAnswer,
@@ -114,7 +106,6 @@ class LinkingService {
     );
     await _keyStore.setRecoveryQuestion(question);
 
-    // 2. Identidad de grupo.
     final groupId = _uuid.v4();
     await _keyStore.setGroupId(groupId);
     await _keyStore.setHostDeviceId(identity.deviceId);
@@ -129,7 +120,6 @@ class LinkingService {
     );
     await _keyStore.setGroupMembers({identity.deviceId: me});
 
-    // 3. QR de invitación con las credenciales cifradas.
     final invite = await _invites.createJoinInvite(
       groupId: groupId,
       hostDeviceId: identity.deviceId,
@@ -150,12 +140,6 @@ class LinkingService {
   // Unirse (guest)
   // ══════════════════════════════════════════════════════════════════
 
-  /// El guest escaneó el QR. Descifra el transport config, lo guarda,
-  /// y prepara la solicitud de join para publicarla en el buzón
-  /// público.
-  ///
-  /// Devuelve el [InviteRequest] a publicar y el `inviteToken` con el
-  /// que el host lo va a reconocer.
   Future<PrepareJoinResult> prepareJoin({
     required GroupInvitePayload invite,
     required String displayName,
@@ -178,14 +162,11 @@ class LinkingService {
       }
     }
 
-    // 1. Descifrar y guardar transport config.
     final transportConfig = await _invites.decryptTransportConfig(invite);
     await _keyStore.setTransportConfig(transportConfig);
 
-    // 2. Identidad del guest.
     final identity = await ensureLocalIdentity();
 
-    // 3. Persistir grupo (todavía sin aprobación).
     await _keyStore.setGroupId(invite.groupId);
     await _keyStore.setHostDeviceId(invite.hostDeviceId);
 
@@ -201,7 +182,6 @@ class LinkingService {
     members[identity.deviceId] = me;
     await _keyStore.setGroupMembers(members);
 
-    // 4. Proof + solicitud.
     final proof = _invites.proofFor(
       invite: invite,
       guestDeviceId: identity.deviceId,
@@ -222,95 +202,9 @@ class LinkingService {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // Preparar recuperación (dispositivo nuevo)
+  // Aceptar / rechazar / expulsar
   // ══════════════════════════════════════════════════════════════════
 
-  /// El dispositivo nuevo escaneó el QR de recuperación de un miembro
-  /// existente. Necesita:
-  /// - `oldDeviceId`: el deviceId viejo (dueño de la cuenta a
-  ///   recuperar).
-  /// - `answer`: la respuesta a la pregunta clave (factor A).
-  /// - `recoveryPin`: opcional, el PIN viejo (factor B).
-  ///
-  /// La verificación real de A y B la hace el host cuando recibe la
-  /// solicitud. Acá solo se calcula el `proof` a partir de la
-  /// respuesta (el host lo verifica con el mismo hash).
-  ///
-  /// **Nunca se envía la respuesta ni el PIN en claro.** El host
-  /// compara el `proof` contra su propio hash de la respuesta.
-  Future<PrepareRecoveryResult> prepareRecovery({
-    required GroupInvitePayload invite,
-    required String displayName,
-    required String recoveryOldDeviceId,
-    required String answer,
-    String? recoveryPin,
-  }) async {
-    if (!invite.isRecovery) {
-      throw LinkingException('Este QR no es de recuperación');
-    }
-    if (invite.isExpired) {
-      throw LinkingException('El QR expiró. Pide uno nuevo.');
-    }
-    final question = invite.recoveryQuestionPlain;
-    if (question == null || question.isEmpty) {
-      throw LinkingException('El QR no tiene pregunta de recuperación');
-    }
-
-    final identity = await ensureLocalIdentity();
-
-    // Proof = SHA-256(respuestaNormalizada || oldDeviceId). El host
-    // lo compara contra su hash local. La respuesta en claro nunca
-    // sale del dispositivo nuevo.
-    final answerProof = _crypto.hashRecoveryAnswer(
-      answer: answer,
-      saltBase64: 'recovery-proof-v1',
-    );
-    final proofBytes = utf8.encode('$answerProof|$recoveryOldDeviceId');
-    final proof = base64Encode(
-      _crypto.proofForJoin(
-        inviteKey: _crypto.deriveInviteKey(invite.inviteToken),
-        guestDeviceId: base64Encode(proofBytes),
-      ).codeUnits,
-    );
-
-    // recoveryPin: si viene, se hashea y se manda como factor B. El
-    // host lo compara contra peerRecoveryPins[oldDeviceId].
-    String? recoveryPinHash;
-    if (recoveryPin != null && recoveryPin.isNotEmpty) {
-      recoveryPinHash = _crypto.hashRecoveryPin(
-        pin: recoveryPin,
-        deviceId: recoveryOldDeviceId,
-      );
-    }
-
-    final request = InviteRequest(
-      groupId: invite.groupId,
-      guestDeviceId: identity.deviceId,
-      guestPublicKeyBase64: identity.publicKeyBase64,
-      displayName: displayName.trim(),
-      proof: proof,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-      recoveryPinHash: recoveryPinHash,
-      recoveryOldDeviceId: recoveryOldDeviceId,
-    );
-
-    return PrepareRecoveryResult(
-      inviteToken: invite.inviteToken,
-      request: request,
-      questionPlain: question,
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Aceptar / rechazar (host y miembros existentes)
-  // ══════════════════════════════════════════════════════════════════
-
-  /// El host (o el miembro que invite) acepta a un nuevo miembro.
-  ///
-  /// Persiste al nuevo en `members`, deriva el `sharedSecret` del par,
-  /// y devuelve el `member` para que el caller avise a los demás.
-  ///
-  /// No manda sobres: eso lo hace el router con `SyncService`.
   Future<GroupMember> acceptMember({
     required GroupMember newMember,
   }) async {
@@ -334,8 +228,6 @@ class LinkingService {
     await _keyStore.setGroupMembers(members);
     await _keyStore.setPeerSharedSecret(newMember.deviceId, secret);
 
-    // Si el nuevo trae su recoveryPinHash, lo guardamos para
-    // verificar su identidad en una futura recuperación (factor B).
     if (newMember.recoveryPinHash != null) {
       await _keyStore.setPeerRecoveryPin(
         newMember.deviceId,
@@ -346,15 +238,11 @@ class LinkingService {
     return merged;
   }
 
-  /// Rechaza a un nuevo miembro. Borra cualquier rastro local.
   Future<void> rejectMember(String deviceId) async {
     await _keyStore.removePeer(deviceId);
     await _keyStore.removePeerRecoveryPin(deviceId);
   }
 
-  /// Expulsa a un miembro. Borra sus secrets, sus recovery pins, y
-  /// su entrada en members. Si el expulsado era el host, se
-  /// promueve al miembro más antiguo restante.
   Future<void> removeMember(String deviceId) async {
     final myId = await _keyStore.getDeviceId();
     if (deviceId == myId) {
@@ -377,7 +265,6 @@ class LinkingService {
     }
   }
 
-  /// Actualiza el `displayName` de un miembro existente.
   Future<void> updateDisplayName({
     required String deviceId,
     required String displayName,
@@ -389,8 +276,6 @@ class LinkingService {
     await _keyStore.setGroupMembers(members);
   }
 
-  /// Actualiza el `recoveryPinHash` de un miembro (cuando ese
-  /// miembro cambia su PIN y lo sincroniza).
   Future<void> updatePeerRecoveryPin({
     required String deviceId,
     required String recoveryPinHash,
@@ -405,85 +290,9 @@ class LinkingService {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // Recuperación (host verifica A + B, luego C)
+  // Pregunta de recuperación
   // ══════════════════════════════════════════════════════════════════
 
-  /// Verifica el factor A (respuesta a la pregunta clave).
-  ///
-  /// El dispositivo nuevo mandó `answerProof` calculado con la misma
-  /// normalización. El host recalcula el hash de la respuesta con el
-  /// salt local y lo compara.
-  ///
-  /// Nota: el dispositivo nuevo no conoce el salt. Lo que manda es
-  /// `SHA-256(respuestaNormalizada)` sin salt (ver
-  /// `prepareRecovery`). El host tiene que comparar contra el mismo
-  /// cálculo.
-  bool verifyRecoveryAnswer({
-    required RecoveryQuestion question,
-    required String answerProofFromGuest,
-    required String recoveryOldDeviceId,
-  }) {
-    // El guest mandó SHA-256(respuestaNorm)||oldDeviceId.
-    // Recalculamos nosotros con el mismo algoritmo.
-    final expectedAnswerProof = _crypto.hashRecoveryAnswer(
-      answer: _lastKnownAnswer ?? '',
-      saltBase64: 'recovery-proof-v1',
-    );
-    // No podemos recalcular sin la respuesta en claro; lo que
-    // hacemos es pedirle al host que introduzca la respuesta y
-    // comparar con la que el guest mandó.
-    return false; // placeholder
-  }
-
-  // Campo temporal usado por verifyRecoveryAnswer. En la práctica,
-  // el host introduce la respuesta en UI y se verifica contra el
-  // proof del guest.
-  String? _lastKnownAnswer;
-
-  /// Verifica el factor A: el host introduce la respuesta en claro y
-  /// se compara contra el hash que el guest envió como proof.
-  ///
-  /// El guest envió `SHA-256(respuestaNorm)` sin salt. El host
-  /// recalcula y compara.
-  bool checkRecoveryAnswer({
-    required String answerFromHost,
-    required String answerProofFromGuest,
-    required String recoveryOldDeviceId,
-  }) {
-    final normalized = _crypto.normalizeRecoveryAnswer(answerFromHost);
-    final bytes = utf8.encode(normalized);
-    final hash = base64Encode(
-      _sha256(bytes),
-    );
-    final proofBytes = utf8.encode('$hash|$recoveryOldDeviceId');
-    final expected = base64Encode(
-      _crypto.proofForJoin(
-        inviteKey: _crypto.deriveInviteKey('recovery-proof-v1'),
-        guestDeviceId: base64Encode(proofBytes),
-      ).codeUnits,
-    );
-    return _constantTimeEquals(expected, answerProofFromGuest);
-  }
-
-  /// Verifica el factor B: el host compara el `recoveryPinHash` que
-  /// mandó el guest contra el que tiene guardado.
-  Future<bool> checkRecoveryPin({
-    required String recoveryOldDeviceId,
-    required String recoveryPinHashFromGuest,
-  }) async {
-    final stored = await _keyStore.getPeerRecoveryPins();
-    final expected = stored[recoveryOldDeviceId];
-    if (expected == null) return false;
-    return _constantTimeEquals(expected, recoveryPinHashFromGuest);
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Pregunta de recuperación (cambio)
-  // ══════════════════════════════════════════════════════════════════
-
-  /// Cambia la pregunta de recuperación. El caller tiene que avisar
-  /// a los demás por sync (`recoveryQuestionUpdate`) para que la
-  /// propaguen.
   Future<RecoveryQuestion> setRecoveryQuestion({
     required String questionPlain,
     required String answer,
@@ -502,7 +311,6 @@ class LinkingService {
     return q;
   }
 
-  /// Aplica una pregunta de recuperación que llegó por sync.
   Future<void> applyRecoveryQuestion(RecoveryQuestion question) async {
     await _keyStore.setRecoveryQuestion(question);
   }
@@ -511,15 +319,14 @@ class LinkingService {
   // PIN de recuperación (factor B local)
   // ══════════════════════════════════════════════════════════════════
 
-  /// Calcula el `recoveryPinHash` a partir del PIN de la app, y lo
-  /// guarda en el Keystore local. Devuelve el hash para que el caller
-  /// lo propague por sync a los demás miembros.
+  /// Calcula el `recoveryPinHash` a partir del PIN de la app y lo
+  /// guarda en el Keystore local. Devuelve el hash para que el
+  /// caller lo propague por sync a los demás miembros.
   Future<String> setLocalRecoveryPin(String pin) async {
     final myId = await _keyStore.getDeviceId();
     if (myId == null) throw LinkingException('Falta deviceId local');
     final hash = _crypto.hashRecoveryPin(pin: pin, deviceId: myId);
 
-    // Guardar en members (para que el snapshot lo refleje).
     final members = await _keyStore.getGroupMembers();
     final me = members[myId];
     if (me != null) {
@@ -529,35 +336,25 @@ class LinkingService {
     return hash;
   }
 
-  // ══════════════════════════════════════════════════════════════════
-  // util
-  // ══════════════════════════════════════════════════════════════════
-
-  List<int> _sha256(List<int> data) {
-    // Importamos crypto solo para este helper puntual; evitamos
-    // duplicar el hash con el CryptoService.
-    return _sha256Impl(data);
-  }
-
-  List<int> _sha256Impl(List<int> data) {
-    // ignore: unnecessary_cast
-    return _sha256Cache(data);
-  }
-
-  List<int> _sha256Cache(List<int> data) {
-    // Implementación mínima: usamos el CryptoService en su lugar
-    // cuando esté disponible. Por ahora, para el check de
-    // recuperación, se resuelve en el router.
-    return data;
-  }
-
-  bool _constantTimeEquals(String a, String b) {
-    if (a.length != b.length) return false;
-    var diff = 0;
-    for (var i = 0; i < a.length; i++) {
-      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+  /// Borra el `recoveryPinHash` local (cuando el usuario quita su
+  /// PIN de la app). El caller debe propagar el cambio con un
+  /// `recoveryPinUpdate` con `recoveryPinHash: null`.
+  Future<void> clearLocalRecoveryPin() async {
+    final myId = await _keyStore.getDeviceId();
+    if (myId == null) return;
+    final members = await _keyStore.getGroupMembers();
+    final me = members[myId];
+    if (me != null) {
+      members[myId] = GroupMember(
+        deviceId: me.deviceId,
+        publicKeyBase64: me.publicKeyBase64,
+        displayName: me.displayName,
+        isHost: me.isHost,
+        joinedAt: me.joinedAt,
+        approved: me.approved,
+      );
+      await _keyStore.setGroupMembers(members);
     }
-    return diff == 0;
   }
 }
 
@@ -580,18 +377,6 @@ class PrepareJoinResult {
   const PrepareJoinResult({
     required this.inviteToken,
     required this.request,
-  });
-}
-
-class PrepareRecoveryResult {
-  final String inviteToken;
-  final InviteRequest request;
-  final String questionPlain;
-
-  const PrepareRecoveryResult({
-    required this.inviteToken,
-    required this.request,
-    required this.questionPlain,
   });
 }
 
