@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/app_theme.dart';
 import 'providers/settings_providers.dart';
+import 'providers/sync_providers.dart';
 import 'screens/main_shell.dart';
 import 'widgets/auth_gate.dart';
 
@@ -11,6 +12,9 @@ class AiloviuApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Mantener vivo el router de sync durante toda la vida de la app.
+    ref.watch(syncRouterProvider);
+
     final settings = ref.watch(settingsProvider);
 
     return MaterialApp(
