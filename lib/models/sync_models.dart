@@ -1,85 +1,73 @@
 import 'package:flutter/foundation.dart';
 
 /// Tipos de sobre que viajan entre dispositivos.
-///
-/// Enum cerrado a propósito: agregar un tipo nuevo es agregar un valor
-/// aquí. Clientes viejos ignoran tipos que no conocen.
 enum SyncType {
-  /// Mensajes de texto, Cartas, Diario (entrada individual).
   message,
-
-  /// Estado privado ("cómo me siento ahora"), estado de relación.
   state,
-
-  /// Referencia a una foto o archivo en Firebase Storage + metadatos.
   photoRef,
-
-  /// Confirmación de descarga de foto. El remitente borra el blob.
   photoAck,
-
-  /// Movimiento de juego a distancia.
   gameMove,
-
-  /// Estado completo de juego a distancia (para resync).
   gameState,
-
-  /// Presencia: online, escribiendo, offline.
   presence,
-
-  /// Intercambio de claves (solo en emparejamiento, no en sync normal).
   keyExchange,
-
-  /// Petición de sync completo cuando se reconecta.
   syncRequest,
-
-  /// Confirmación de sync completo.
   syncAck,
+
+  /// Un miembro nuevo fue aprobado y se anuncia al grupo.
+  memberJoin,
+
+  /// Alguien salió o fue expulsado.
+  memberLeave,
+
+  /// El host comparte credenciales de Firebase a un miembro nuevo.
+  hostCredentials,
+
+  /// El guest pide al host (o a todos los miembros) que lo aprueben.
+  joinRequest,
+
+  /// Un miembro existente aprueba o rechaza un join/recovery.
+  joinVote,
+
+  /// El host confirma al guest que fue aceptado, con la lista de
+  /// miembros y la confirmación de credenciales.
+  memberAccept,
+
+  /// Un miembro rechazó el join.
+  memberReject,
+
+  /// Alguien pide recuperar su cuenta desde un dispositivo nuevo.
+  recoveryRequest,
+
+  /// Un miembro vota en una solicitud de recuperación.
+  recoveryVote,
+
+  /// El host confirma la recuperación: el miembro viejo se da de
+  /// baja y el nuevo ocupa su lugar.
+  recoveryAccept,
+
+  /// Alguien cambió su PIN de recuperación. Los demás actualizan su
+  /// copia local del hash.
+  recoveryPinUpdate,
+
+  /// El host comparte o actualiza la pregunta de recuperación del
+  /// grupo.
+  recoveryQuestionUpdate,
 }
 
 /// Sobre cifrado. Es lo único que viaja entre dispositivos.
-///
-/// El contenido real va en [ciphertext], cifrado con Signal Protocol.
-/// Todo lo demás es routing y verificación.
 @immutable
 class SyncEnvelope {
-  /// Versión del formato. Empieza en 1. Permite migrar sin romper
-  /// clientes viejos.
   final int v;
-
-  /// ULID local, único por sobre. Sirve para deduplicar.
   final String id;
-
-  /// deviceId del remitente.
   final String from;
-
-  /// deviceId del destinatario.
   final String to;
-
   final SyncType type;
-
-  /// Epoch ms del remitente. Sirve para ordenar y para TTL.
   final int createdAt;
-
-  /// Si expira, el receptor descarta el sobre.
   final int? ttlMs;
-
-  /// Base64, 12 bytes, único por sobre. Nunca reutilizar con la misma
-  /// clave.
   final String nonce;
-
-  /// Base64. Payload cifrado con Signal Protocol (AES-GCM).
   final String ciphertext;
-
-  /// Base64. HMAC-SHA256 del sobre (cubre v, id, from, to, type,
-  /// createdAt, nonce, ciphertext). Verifica integridad y
-  /// autenticidad.
   final String signature;
-
-  /// id del sobre al que responde, si aplica (conversaciones).
   final String? replyTo;
-
-  /// Metadatos NO sensibles. Solo routing: topic, chunkIndex,
-  /// totalChunks, hash del blob, etc. Nunca contenido.
   final Map<String, String>? meta;
 
   const SyncEnvelope({
@@ -130,7 +118,6 @@ class SyncEnvelope {
         meta: (json['meta'] as Map?)?.cast<String, String>(),
       );
 
-  /// `true` si el sobre expiró según [ttlMs].
   bool isExpired({DateTime? now}) {
     if (ttlMs == null) return false;
     final current = (now ?? DateTime.now()).millisecondsSinceEpoch;
@@ -165,19 +152,10 @@ class SyncEvent {
 
 /// Estado del servicio de sync.
 enum SyncStatus {
-  /// No hay pareja emparejada. App local-only.
   unpaired,
-
-  /// Hay pareja, pero el transporte no está conectado.
   offline,
-
-  /// Conectado, escuchando.
   online,
-
-  /// En medio de un envío o recepción.
   syncing,
-
-  /// Error de transporte o de criptografía.
   error,
 }
 
@@ -199,3 +177,55 @@ class TransportResult {
 
 /// Estado del transporte.
 enum TransportStatus { disconnected, connecting, connected, error }
+
+/// Contenido del buzón público `invites/{token}`.
+///
+/// Es lo único que el guest publica antes de tener el transport
+/// configurado. El host lo lee con las credenciales del grupo.
+@immutable
+class InviteRequest {
+  final String groupId;
+  final String guestDeviceId;
+  final String guestPublicKeyBase64;
+  final String displayName;
+  final String proof;
+  final int createdAt;
+  final String? recoveryPinHash;
+  final String? recoveryOldDeviceId;
+
+  const InviteRequest({
+    required this.groupId,
+    required this.guestDeviceId,
+    required this.guestPublicKeyBase64,
+    required this.displayName,
+    required this.proof,
+    required this.createdAt,
+    this.recoveryPinHash,
+    this.recoveryOldDeviceId,
+  });
+
+  bool get isRecovery => recoveryOldDeviceId != null;
+
+  Map<String, dynamic> toJson() => {
+        'groupId': groupId,
+        'guestDeviceId': guestDeviceId,
+        'guestPublicKeyBase64': guestPublicKeyBase64,
+        'displayName': displayName,
+        'proof': proof,
+        'createdAt': createdAt,
+        if (recoveryPinHash != null) 'recoveryPinHash': recoveryPinHash,
+        if (recoveryOldDeviceId != null)
+          'recoveryOldDeviceId': recoveryOldDeviceId,
+      };
+
+  static InviteRequest fromJson(Map<String, dynamic> json) => InviteRequest(
+        groupId: json['groupId'] as String,
+        guestDeviceId: json['guestDeviceId'] as String,
+        guestPublicKeyBase64: json['guestPublicKeyBase64'] as String,
+        displayName: json['displayName'] as String,
+        proof: json['proof'] as String,
+        createdAt: json['createdAt'] as int,
+        recoveryPinHash: json['recoveryPinHash'] as String?,
+        recoveryOldDeviceId: json['recoveryOldDeviceId'] as String?,
+      );
+}
