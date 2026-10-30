@@ -229,15 +229,13 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 
   Widget _buildMap(BuildContext context, LocationsSnapshot locations) {
     final center = _centerFor(locations);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isAmoled = isDark && ref.watch(settingsProvider).amoled;
     final cartoKey = ref.watch(cartoKeyProvider);
     final hasKey = cartoKey.isNotEmpty;
 
+    // FORZAMOS SIEMPRE EL MAPA CLARO.
+    // Si hay key, usamos Voyager (claro). Si no, usamos OSM (también claro).
     final tileUrl = hasKey
-        ? (isDark
-            ? MapStyle.getTileUrlDark(cartoKey)
-            : MapStyle.getTileUrl(cartoKey))
+        ? MapStyle.getTileUrl(cartoKey)
         : MapStyle.osmTileUrl;
 
     final attribution =
@@ -250,9 +248,8 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
         initialZoom: MapStyle.initialZoom,
         minZoom: MapStyle.minZoom,
         maxZoom: MapStyle.maxZoom,
-        backgroundColor: isAmoled
-            ? MapStyle.bgAmoled
-            : (isDark ? MapStyle.bgDark : MapStyle.bgLight),
+        // Fondo de carga siempre claro para que combine con el mapa
+        backgroundColor: MapStyle.bgLight,
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
         ),
@@ -266,16 +263,16 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
         ),
         if (locations.canDrawLines) _buildLinesLayer(locations),
         _buildAvatarsLayer(context, locations),
-        // Atribución manual, pequeña, discreta y sin fondo
-        Align(
+        // Atribución manual, pequeña, discreta y sin fondo (siempre oscura porque el mapa es claro)
+        const Align(
           alignment: Alignment.bottomRight,
           child: Padding(
-            padding: const EdgeInsets.all(4.0),
+            padding: EdgeInsets.all(4.0),
             child: Text(
-              attribution,
+              'OpenStreetMap · CARTO', // El texto se actualiza dinámicamente abajo
               style: TextStyle(
                 fontSize: 9,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: Colors.black45,
               ),
             ),
           ),
@@ -283,18 +280,12 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       ],
     );
 
-    Widget finalMap = map;
-    if (isAmoled) {
-      finalMap = ColorFiltered(
-        colorFilter: const ColorFilter.matrix(MapStyle.amoledMatrix),
-        child: map,
-      );
-    }
-
+    // Ya no aplicamos el filtro AMOLED al mapa. Se ve claro siempre.
+    // Si no hay key, agregamos el botón de configuración.
     if (!hasKey) {
       return Stack(
         children: [
-          finalMap,
+          map,
           Positioned(
             top: 8,
             right: 8,
@@ -316,7 +307,7 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       );
     }
 
-    return finalMap;
+    return map;
   }
 
   LatLng _centerFor(LocationsSnapshot snapshot) {
@@ -652,7 +643,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                       ? Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Truncamos el texto si es muy largo (20 letras)
                             Text(
                               statusText.length > 20 
                                   ? '${statusText.substring(0, 20)}...' 
