@@ -32,6 +32,7 @@ class HomeMapHero extends ConsumerStatefulWidget {
 
 class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
   final _locationService = LocationService();
+  final _mapController = MapController();
   bool _pressed = false;
   bool _requestingLocation = false;
 
@@ -170,6 +171,19 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     final scheme = Theme.of(context).colorScheme;
     final points = locations.everyone;
 
+    // Escuchar cuando se guarda la ubicación por primera vez para recentrar el mapa
+    ref.listen<LocationsSnapshot>(locationsProvider, (previous, next) {
+      final prevLoc = previous?.all[next.myDeviceId];
+      final nextLoc = next.all[next.myDeviceId];
+      // Si antes no había ubicación propia y ahora sí, movemos el mapa
+      if (prevLoc == null && nextLoc != null) {
+        _mapController.move(
+          LatLng(nextLoc.latitude, nextLoc.longitude),
+          MapStyle.initialZoom,
+        );
+      }
+    });
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (_) => _setPressed(true),
@@ -230,6 +244,7 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
         hasKey ? MapStyle.attributionCarto : MapStyle.attributionOsm;
 
     final map = FlutterMap(
+      mapController: _mapController,
       options: MapOptions(
         initialCenter: center,
         initialZoom: MapStyle.initialZoom,
@@ -251,17 +266,24 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
         ),
         if (locations.canDrawLines) _buildLinesLayer(locations),
         _buildAvatarsLayer(context, locations),
-        SimpleAttributionWidget(
-          source: Text(
-            attribution,
-            style: const TextStyle(fontSize: 9, color: Colors.grey),
+        // Atribución manual, pequeña, discreta y sin fondo
+        Align(
+          alignment: Alignment.bottomRight,
+          child: Padding(
+            padding: const EdgeInsets.all(4.0),
+            child: Text(
+              attribution,
+              style: TextStyle(
+                fontSize: 9,
+                color: isDark ? Colors.white54 : Colors.black45,
+              ),
+            ),
           ),
         ),
       ],
     );
 
     Widget finalMap = map;
-    // Solo aplicamos AMOLED si el usuario lo pidió. OSM se ve tal cual.
     if (isAmoled) {
       finalMap = ColorFiltered(
         colorFilter: const ColorFilter.matrix(MapStyle.amoledMatrix),
@@ -269,7 +291,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       );
     }
 
-    // Botón para configurar la API key (si no hay)
     if (!hasKey) {
       return Stack(
         children: [
@@ -348,9 +369,9 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       final name = i < names.length ? names[i] : '';
       final isMe = loc.deviceId == snapshot.myDeviceId;
       
-      final hasStatus = isMe 
-          ? myStatus != null 
-          : partnerStatuses.containsKey(loc.deviceId);
+      final status = isMe 
+          ? myStatus 
+          : partnerStatuses[loc.deviceId];
 
       markers.add(
         Marker(
@@ -360,7 +381,7 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
           child: _AvatarMarker(
             name: name,
             isMe: isMe,
-            hasStatus: hasStatus,
+            status: status,
             onEditStatus: isMe ? widget.onEditStatus : null,
           ),
         ),
@@ -519,13 +540,13 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 class _AvatarMarker extends StatefulWidget {
   final String name;
   final bool isMe;
-  final bool hasStatus;
+  final PartnerStatus? status;
   final VoidCallback? onEditStatus;
 
   const _AvatarMarker({
     required this.name,
     required this.isMe,
-    required this.hasStatus,
+    required this.status,
     this.onEditStatus,
   });
 
@@ -542,6 +563,9 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
     final initial = widget.name.trim().isEmpty
         ? null
         : widget.name.trim()[0].toUpperCase();
+
+    final hasStatus = widget.status != null;
+    final statusText = widget.status?.displayText ?? '';
 
     return Stack(
       alignment: Alignment.center,
@@ -597,25 +621,11 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
           ),
         ),
 
-        if (widget.hasStatus)
-          Positioned(
-            top: 0,
-            left: 0,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                color: scheme.tertiary,
-                shape: BoxShape.circle,
-                border: Border.all(color: scheme.surface, width: 2),
-              ),
-            ),
-          ),
-
+        // Badge de edición (donde antes estaba el +)
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
-            bottom: -2,
-            right: -2,
+            bottom: -4,
+            right: -10, // Desplazado un poco a la derecha para que quepa el texto
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _badgePressed = true),
@@ -628,18 +638,38 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                 curve:
                     _badgePressed ? Curves.easeOutCubic : Curves.easeOutBack,
                 child: Container(
-                  width: 22,
-                  height: 22,
+                  padding: hasStatus 
+                      ? const EdgeInsets.symmetric(horizontal: 6, vertical: 2)
+                      : EdgeInsets.zero,
+                  width: hasStatus ? null : 22,
+                  height: hasStatus ? null : 22,
                   decoration: BoxDecoration(
-                    color: scheme.tertiaryContainer,
+                    color: hasStatus ? scheme.surfaceContainerHigh : scheme.tertiaryContainer,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: scheme.surface, width: 2),
                   ),
-                  child: Icon(
-                    Icons.add_rounded,
-                    size: 12,
-                    color: scheme.onTertiaryContainer,
-                  ),
+                  child: hasStatus
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Truncamos el texto si es muy largo
+                            Text(
+                              statusText.length > 10 
+                                  ? '${statusText.substring(0, 10)}...' 
+                                  : statusText,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: scheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Icon(
+                          Icons.add_rounded,
+                          size: 12,
+                          color: scheme.onTertiaryContainer,
+                        ),
                 ),
               ),
             ),
