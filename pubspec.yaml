@@ -55,8 +55,8 @@ dependencies:
   # ── Share sheet (para exportar fotos, compartir config) ────────
   share_plus: ^10.0.2
 
-# ── Abrir enlaces externos ──────────────────────────────────────
-url_launcher: ^6.3.0
+  # ── Abrir enlaces externos ─────────────────────────────────────
+  url_launcher: ^6.3.0
 
   # ── Juegos en persona (Nearby Connections) ─────────────────────
   nearby_connections: ^4.3.0
