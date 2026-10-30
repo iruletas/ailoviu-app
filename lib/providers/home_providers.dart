@@ -4,6 +4,7 @@ import '../core/secure_store.dart';
 import '../models/home_models.dart';
 import '../models/sync_models.dart';
 import '../services/device_identity_service.dart';
+import '../services/location_service.dart';
 import 'prefs_provider.dart';
 import 'sync_providers.dart';
 
@@ -18,6 +19,7 @@ class _Keys {
   static const locations = 'home.locations';
   static const buzz = 'home.buzz';
   static const distance = 'home.distance';
+  static const locationShared = 'home.locationShared';
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -32,6 +34,14 @@ final myDeviceIdProvider = FutureProvider<String>((ref) async {
   final service = ref.watch(deviceIdentityServiceProvider);
   return service.getOrCreate();
 });
+
+// ══════════════════════════════════════════════════════════════════════
+// Location service
+// ══════════════════════════════════════════════════════════════════════
+
+final locationServiceProvider = Provider<LocationService>(
+  (ref) => LocationService(),
+);
 
 // ══════════════════════════════════════════════════════════════════════
 // Statuses
@@ -154,14 +164,21 @@ final statusesProvider =
 // ══════════════════════════════════════════════════════════════════════
 
 class LocationsNotifier extends StateNotifier<LocationsSnapshot> {
-  LocationsNotifier(this._ref, this._store, this._myDeviceId)
-      : super(LocationsSnapshot(myDeviceId: _myDeviceId)) {
+  LocationsNotifier(
+    this._ref,
+    this._store,
+    this._locationService,
+    this._myDeviceId,
+  ) : super(LocationsSnapshot(myDeviceId: _myDeviceId)) {
     _load();
   }
 
   final Ref _ref;
   final SecureStore _store;
+  final LocationService _locationService;
   final String _myDeviceId;
+
+  bool _refreshing = false;
 
   Future<void> _load() async {
     final json = await _store.getJson(_Keys.locations);
@@ -178,6 +195,81 @@ class LocationsNotifier extends StateNotifier<LocationsSnapshot> {
     } catch (_) {
       await _store.remove(_Keys.locations);
     }
+  }
+
+  /// `true` si el usuario ya compartió su ubicación al menos una vez
+  /// (hay una entrada propia guardada o un flag persistido).
+  Future<bool> hasEverShared() async {
+    if (state.all.containsKey(_myDeviceId)) return true;
+    return (await _store.getBool(_Keys.locationShared)) ?? false;
+  }
+
+  /// Pide permiso (si aún no lo hay) y publica una ubicación fresca.
+  ///
+  /// Pensado para llamarse al abrir la app o desde el FAB. Es
+  /// **idempotente por ejecución**: si ya hay un refresh en curso,
+  /// retorna sin hacer nada. Si el usuario nunca compartió y no hay
+  /// permiso, no pedimos permiso sorpresivo: retornamos `false`.
+  ///
+  /// Retorna `true` si se guardó una ubicación nueva.
+  Future<bool> refreshMyLocation() async {
+    if (_refreshing) return false;
+    if (_myDeviceId.isEmpty) return false;
+    _refreshing = true;
+    try {
+      final alreadyShared = await hasEverShared();
+
+      // Si nunca compartió, no pedimos permiso (evita diálogo
+      // sorpresivo al primer arranque). El FAB del mapa sí lo pedirá
+      // cuando el usuario toque explícitamente.
+      final hasPerm = await _locationService.hasPermission();
+      if (!hasPerm && !alreadyShared) {
+        return false;
+      }
+
+      if (!hasPerm) {
+        final perm = await _locationService.ensurePermission();
+        if (perm != LocationResult.success) {
+          return false;
+        }
+      }
+
+      final attempt = await _locationService.getFreshLocation(
+        deviceId: _myDeviceId,
+      );
+      if (!attempt.isSuccess || attempt.location == null) {
+        return false;
+      }
+
+      await saveMyLocation(attempt.location!);
+      await _store.setBool(_Keys.locationShared, true);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  /// Fuerza un refresh pidiendo permiso si hace falta. Pensado para
+  /// gestos explícitos del usuario (FAB "mi ubicación", botón del
+  /// estado vacío). Retorna el [LocationResult] para que la UI pueda
+  /// mostrar el motivo del fallo.
+  Future<LocationResult> forceRefreshMyLocation() async {
+    if (_myDeviceId.isEmpty) return LocationResult.error;
+    final perm = await _locationService.ensurePermission();
+    if (perm != LocationResult.success) return perm;
+
+    final attempt = await _locationService.getFreshLocation(
+      deviceId: _myDeviceId,
+    );
+    if (!attempt.isSuccess || attempt.location == null) {
+      return attempt.result;
+    }
+
+    await saveMyLocation(attempt.location!);
+    await _store.setBool(_Keys.locationShared, true);
+    return LocationResult.success;
   }
 
   Future<void> saveMyLocation(PartnerLocation loc) async {
@@ -219,7 +311,12 @@ class LocationsNotifier extends StateNotifier<LocationsSnapshot> {
 final locationsProvider =
     StateNotifierProvider<LocationsNotifier, LocationsSnapshot>((ref) {
   final myId = ref.watch(myDeviceIdProvider).valueOrNull ?? '';
-  return LocationsNotifier(ref, ref.read(secureStoreProvider), myId);
+  return LocationsNotifier(
+    ref,
+    ref.read(secureStoreProvider),
+    ref.read(locationServiceProvider),
+    myId,
+  );
 });
 
 // ══════════════════════════════════════════════════════════════════════
