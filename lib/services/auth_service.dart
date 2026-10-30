@@ -6,10 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:local_auth/local_auth.dart';
 
+import '../models/sync_models.dart';
 import '../providers/sync_providers.dart';
 import 'key_store.dart';
+import 'linking_service.dart';
 
-/// Resultado de un intento de autenticación con el sistema.
 enum AuthResult {
   success,
   cancelled,
@@ -20,22 +21,23 @@ enum AuthResult {
 
 /// Servicio de autenticación.
 ///
-/// - [authenticateWithSystem]: delega al sistema operativo
-///   (`BiometricPrompt` en Android). El sistema muestra huella/PIN/
-///   patrón/contraseña, lo que el usuario tenga configurado.
-/// - [verifyAppPin] / [setAppPin]: PIN propio de la app como fallback
-///   cuando el dispositivo no tiene bloqueo de pantalla. El hash y el
-///   salt viven en [KeyStore] (Android Keystore), no en
-///   SharedPreferences.
+/// Además del PIN de desbloqueo, mantiene el **PIN de recuperación**
+/// (factor B de recuperación). Cuando se configura o cambia el PIN,
+/// se deriva `recoveryPinHash = SHA-256(PIN || deviceId || "ailoviu-
+/// recovery-v1")` y se propaga a los demás miembros del grupo.
 class AuthService {
-  AuthService(this._localAuth, this._keyStore);
+  AuthService(
+    this._localAuth,
+    this._keyStore,
+    this._linking,
+  );
 
   final LocalAuthentication _localAuth;
   final KeyStore _keyStore;
+  final LinkingService _linking;
 
-  // ── Sistema ────────────────────────────────────────────────────────
+  // ── Sistema ──────────────────────────────────────────────────────
 
-  /// `true` si el dispositivo puede autenticar con el sistema.
   Future<bool> checkSystemAuthAvailable() async {
     try {
       return await _localAuth.isDeviceSupported();
@@ -44,9 +46,6 @@ class AuthService {
     }
   }
 
-  /// Abre el prompt del sistema. En Android esto muestra el
-  /// `BiometricPrompt` con todos los métodos que el usuario tenga
-  /// configurados.
   Future<AuthResult> authenticateWithSystem() async {
     try {
       final success = await _localAuth.authenticate(
@@ -76,13 +75,22 @@ class AuthService {
     }
   }
 
-  // ── PIN fallback ───────────────────────────────────────────────────
+  // ── PIN fallback ─────────────────────────────────────────────────
 
-  Future<void> setAppPin(String pin) async {
+  /// Configura el PIN de desbloqueo. Además, calcula el
+  /// `recoveryPinHash` y lo deja en `GroupMember.recoveryPinHash`.
+  ///
+  /// La propagación a los demás miembros la hace el caller (la
+  /// pantalla de PIN o de seguridad) con `SyncService.enqueue`.
+  Future<String> setAppPin(String pin) async {
     final salt = _generateSalt();
     final hash = _hashPin(pin, salt);
     await _keyStore.setPinSalt(salt);
     await _keyStore.setPinHash(hash);
+
+    // Factor B: derivar y guardar localmente.
+    final recoveryHash = await _linking.setLocalRecoveryPin(pin);
+    return recoveryHash;
   }
 
   Future<bool> verifyAppPin(String pin) async {
@@ -97,7 +105,11 @@ class AuthService {
     }
   }
 
-  Future<void> clearAppPin() => _keyStore.clearPin();
+  /// Borra el PIN de desbloqueo y el `recoveryPinHash` local.
+  Future<void> clearAppPin() async {
+    await _keyStore.clearPin();
+    await _linking.clearLocalRecoveryPin();
+  }
 
   String _generateSalt() {
     final rng = Random.secure();
@@ -120,11 +132,36 @@ class AuthService {
   }
 }
 
-/// [AuthService] listo para usar.
-///
-/// Sigue siendo `FutureProvider` para no tocar a los consumidores
-/// (`ref.read(authServiceProvider.future)`).
+/// [AuthService] con `LinkingService` inyectado.
 final authServiceProvider = FutureProvider<AuthService>((ref) async {
-  final keyStore = ref.watch(keyStoreProvider);
-  return AuthService(LocalAuthentication(), keyStore);
+  return AuthService(
+    LocalAuthentication(),
+    ref.watch(keyStoreProvider),
+    ref.watch(linkingServiceProvider),
+  );
 });
+
+// ── Helpers para propagar el recoveryPinHash ─────────────────────
+//
+// No son providers, son funciones libres que la UI llama después de
+// `setAppPin` / `clearAppPin`. Se ponen acá para que sea un solo
+// import.
+
+/// Propaga el `recoveryPinHash` a todos los miembros del grupo.
+Future<void> broadcastRecoveryPin({
+  required Ref ref,
+  required String? recoveryPinHash,
+}) async {
+  final myId = await ref.read(keyStoreProvider).getDeviceId();
+  if (myId == null) return;
+  try {
+    final sync = await ref.read(syncServiceProvider.future);
+    await sync.enqueue(
+      type: SyncType.recoveryPinUpdate,
+      payload: {
+        'deviceId': myId,
+        if (recoveryPinHash != null) 'recoveryPinHash': recoveryPinHash,
+      },
+    );
+  } catch (_) {}
+}
