@@ -12,30 +12,12 @@ import 'notification_service.dart';
 import 'sync_transport.dart';
 import 'transport_config.dart';
 
-/// Orquestador de sync.
+/// Orquestador de sync multi-miembro.
 ///
-/// - Encola sobres para envío.
-/// - Escucha sobres entrantes, los descifra, y los emite.
-/// - Maneja la reconexión.
-/// - No sabe de transportes concretos (habla con [SyncTransport]).
-/// - No sabe de criptografía concreta (habla con [CryptoService]).
+/// Mantiene un `sharedSecret` por cada peer aprobado. `enqueue`
+/// acepta `to` explícito o manda a todos si no se especifica.
 ///
-/// Entrega de sobres entrantes:
-/// 1. Se procesan de uno en uno y en orden.
-/// 2. Un sobre solo se confirma al transporte (y se borra del buzón)
-///    cuando se entregó a alguien que escucha [events]. Si nadie
-///    escucha todavía, espera en una cola en memoria Y sigue en el
-///    buzón: si la app se cierra, se reentrega al volver.
-/// 3. Los sobres inválidos, expirados o ilegibles se descartan: no
-///    tienen arreglo y atascarían el buzón.
-/// 4. Se deduplica por id (el transporte puede reentregar).
-///
-/// Modo [notifyOnly] (servicio en segundo plano): solo descifra y
-/// notifica. NUNCA entrega ni confirma, así el sobre sigue en el
-/// buzón hasta que la app lo procese.
-///
-/// Ojo: cuando existan las features que persisten mensajes (Bloque
-/// C), lo ideal es confirmar después de persistir, no al entregar.
+/// El contrato de entrega (dedup, ACK, notifyOnly) no cambia.
 class SyncService {
   SyncService({
     required KeyStore keyStore,
@@ -46,7 +28,6 @@ class SyncService {
         _crypto = crypto,
         _notifications = notifications;
 
-  /// `true` en el servicio en segundo plano: solo notifica.
   final bool notifyOnly;
 
   final KeyStore _keyStore;
@@ -59,11 +40,9 @@ class SyncService {
       StreamController<SyncEvent>.broadcast(onListen: _onFirstListener);
   final _statusController = StreamController<SyncStatus>.broadcast();
 
-  /// Eventos que llegaron cuando nadie escuchaba [events].
   final List<SyncEvent> _pending = <SyncEvent>[];
   static const int _maxPending = 500;
 
-  /// ids ya procesados (los más recientes). Orden de inserción.
   final Set<String> _seen = <String>{};
   static const int _maxSeen = 500;
 
@@ -71,9 +50,9 @@ class SyncService {
   StreamSubscription<void>? _incomingSub;
   StreamSubscription<TransportStatus>? _statusSub;
 
-  Uint8List? _sharedSecret;
+  final Map<String, Uint8List> _sharedSecrets = {};
+
   String? _deviceId;
-  String? _peerDeviceId;
 
   SyncStatus _status = SyncStatus.unpaired;
 
@@ -81,13 +60,12 @@ class SyncService {
   Stream<SyncStatus> get status => _statusController.stream;
   SyncStatus get currentStatus => _status;
 
-  /// Inicializa el servicio.
+  bool get hasPeers => _sharedSecrets.isNotEmpty;
+
   Future<void> initialize() async {
     try {
       await _notifications.initialize(requestPermission: !notifyOnly);
-    } catch (_) {
-      // Sin notificaciones el sync debe funcionar igual.
-    }
+    } catch (_) {}
 
     _deviceId = await _keyStore.getDeviceId();
     if (_deviceId == null) {
@@ -95,13 +73,26 @@ class SyncService {
       await _keyStore.setDeviceId(_deviceId!);
     }
 
-    _peerDeviceId = await _keyStore.getPeerDeviceId();
-    final secret = await _keyStore.getSharedSecret();
-    if (secret != null) {
-      _sharedSecret = Uint8List.fromList(base64Decode(secret));
+    await reloadPeers();
+  }
+
+  /// Vuelve a leer los secrets de peers y reinicializa el transporte
+  /// si hace falta. Se llama cuando entra o sale un miembro.
+  Future<void> reloadPeers() async {
+    final members = await _keyStore.getGroupMembers();
+    _sharedSecrets.clear();
+    for (final m in members.values) {
+      if (m.deviceId == _deviceId) continue;
+      if (!m.approved) continue;
+      final secretB64 = await _keyStore.getPeerSharedSecret(m.deviceId);
+      if (secretB64 == null) continue;
+      try {
+        _sharedSecrets[m.deviceId] =
+            Uint8List.fromList(base64Decode(secretB64));
+      } catch (_) {}
     }
 
-    if (_peerDeviceId == null || _sharedSecret == null) {
+    if (_sharedSecrets.isEmpty) {
       _setStatus(SyncStatus.unpaired);
       return;
     }
@@ -112,7 +103,9 @@ class SyncService {
       return;
     }
 
-    await _initializeTransport(config);
+    if (_transport == null) {
+      await _initializeTransport(config);
+    }
   }
 
   Future<void> _initializeTransport(TransportConfig config) async {
@@ -129,9 +122,6 @@ class SyncService {
         ...config.toJson(),
       });
 
-      // Los streams del transporte son de una sola suscripción y
-      // bufferean: lo que llegó durante initialize() se entrega aquí.
-      // asyncMap procesa un sobre a la vez, en orden.
       _incomingSub = _transport!.incoming
           .asyncMap<void>(_handleIncoming)
           .listen((_) {});
@@ -157,70 +147,69 @@ class SyncService {
     }
   }
 
-  /// Encola un payload para envío. Devuelve el id del sobre.
-  ///
-  /// Lanza [StateError] si no hay sync listo o si el transporte
-  /// rechazó el envío, para que quien llama pueda reintentar o avisar.
-  Future<String> enqueue({
+  /// Encola un payload. `to == null` = a todos los peers.
+  /// Devuelve los ids de los sobres enviados.
+  Future<List<String>> enqueue({
     required SyncType type,
     required Map<String, dynamic> payload,
+    String? to,
     String? replyTo,
     int? ttlMs,
   }) async {
     final transport = _transport;
-    final secret = _sharedSecret;
     final deviceId = _deviceId;
-    final peerDeviceId = _peerDeviceId;
-
-    if (transport == null ||
-        secret == null ||
-        deviceId == null ||
-        peerDeviceId == null) {
-      throw StateError('Sync no inicializado o pareja no emparejada');
+    if (transport == null || deviceId == null) {
+      throw StateError('Sync no inicializado');
     }
 
-    final id = _uuid.v4();
-    final createdAt = DateTime.now().millisecondsSinceEpoch;
-    final encrypted = await _crypto.encrypt(
-      sharedSecret: secret,
-      payload: payload,
-    );
-    final signature = _crypto.signEnvelope(
-      sharedSecret: secret,
-      v: '1',
-      id: id,
-      from: deviceId,
-      to: peerDeviceId,
-      type: type.name,
-      createdAt: createdAt.toString(),
-      nonce: encrypted.nonceBase64,
-      ciphertext: encrypted.ciphertextBase64,
-    );
+    final targets = to != null
+        ? [to]
+        : _sharedSecrets.keys.toList(growable: false);
+    if (targets.isEmpty) return [];
 
-    final envelope = SyncEnvelope(
-      v: 1,
-      id: id,
-      from: deviceId,
-      to: peerDeviceId,
-      type: type,
-      createdAt: createdAt,
-      ttlMs: ttlMs,
-      nonce: encrypted.nonceBase64,
-      ciphertext: encrypted.ciphertextBase64,
-      signature: signature,
-      replyTo: replyTo,
-    );
+    final sentIds = <String>[];
+    for (final peerId in targets) {
+      final secret = _sharedSecrets[peerId];
+      if (secret == null) continue;
 
-    final result = await transport.send(envelope);
-    if (!result.accepted) {
-      throw StateError(
-        'No se pudo enviar el sobre: ${result.error ?? 'error desconocido'}',
+      final id = _uuid.v4();
+      final createdAt = DateTime.now().millisecondsSinceEpoch;
+      final encrypted = await _crypto.encrypt(
+        sharedSecret: secret,
+        payload: payload,
       );
+      final signature = _crypto.signEnvelope(
+        sharedSecret: secret,
+        v: '1',
+        id: id,
+        from: deviceId,
+        to: peerId,
+        type: type.name,
+        createdAt: createdAt.toString(),
+        nonce: encrypted.nonceBase64,
+        ciphertext: encrypted.ciphertextBase64,
+      );
+
+      final envelope = SyncEnvelope(
+        v: 1,
+        id: id,
+        from: deviceId,
+        to: peerId,
+        type: type,
+        createdAt: createdAt,
+        ttlMs: ttlMs,
+        nonce: encrypted.nonceBase64,
+        ciphertext: encrypted.ciphertextBase64,
+        signature: signature,
+        replyTo: replyTo,
+      );
+
+      final result = await transport.send(envelope);
+      if (result.accepted) sentIds.add(id);
     }
-    return id;
+    return sentIds;
   }
 
-  /// Pide un sync completo al otro dispositivo.
   Future<void> requestFullSync() async {
     await enqueue(
       type: SyncType.syncRequest,
@@ -228,24 +217,24 @@ class SyncService {
     );
   }
 
-  // ── Recepción ───────────────────────────────────────────────────
-
   Future<void> _handleIncoming(SyncEnvelope envelope) async {
     final transport = _transport;
-    final secret = _sharedSecret;
-    if (transport == null || secret == null) return;
+    if (transport == null) return;
 
     try {
-      // Reentrega de algo ya procesado: solo confirmar.
       if (_seen.contains(envelope.id)) {
+        if (!notifyOnly) _ack(envelope.id);
+        return;
+      }
+
+      final secret = _sharedSecrets[envelope.from];
+      if (secret == null) {
         if (!notifyOnly) _ack(envelope.id);
         return;
       }
 
       final event = await _decode(envelope, secret);
       if (event == null) {
-        // Inválido, expirado o ilegible: no tiene arreglo. Se
-        // descarta para no atascar el buzón.
         if (!notifyOnly) _ack(envelope.id);
         return;
       }
@@ -253,12 +242,9 @@ class SyncService {
       _markSeen(envelope.id);
       if (!notifyOnly) _deliver(event);
       await _notifyIfNeeded(event);
-    } catch (_) {
-      // Fallo inesperado: NO se confirma, el sobre sigue en el buzón.
-    }
+    } catch (_) {}
   }
 
-  /// Verifica, revisa TTL y descifra. `null` = descartar.
   Future<SyncEvent?> _decode(
     SyncEnvelope envelope,
     Uint8List secret,
@@ -277,7 +263,6 @@ class SyncService {
         signature: envelope.signature,
       );
       if (!valid) return null;
-
       if (envelope.isExpired()) return null;
 
       final payload = await _crypto.decrypt(
@@ -300,20 +285,13 @@ class SyncService {
     }
   }
 
-  /// Entrega el evento a quien escuche, o lo deja en la cola interna
-  /// hasta que alguien escuche. El sobre se confirma al transporte
-  /// solo cuando un suscriptor lo recibe ([_emit]).
   void _deliver(SyncEvent event) {
     if (_eventsController.isClosed) return;
-
     if (_eventsController.hasListener) {
-      _flushPending(); // primero lo acumulado, para conservar el orden
+      _flushPending();
       _emit(event);
       return;
     }
-
-    // Si la cola está llena, el sobre simplemente se queda en el
-    // buzón (sin confirmar) y se reentrega en el próximo arranque.
     if (_pending.length < _maxPending) _pending.add(event);
   }
 
@@ -329,7 +307,6 @@ class SyncService {
   }
 
   void _onFirstListener() {
-    // Microtask: asegura que la suscripción ya quedó registrada.
     scheduleMicrotask(_flushPending);
   }
 
@@ -343,39 +320,75 @@ class SyncService {
 
   void _markSeen(String id) {
     _seen.add(id);
-    if (_seen.length > _maxSeen) {
-      _seen.remove(_seen.first);
-    }
+    if (_seen.length > _maxSeen) _seen.remove(_seen.first);
   }
 
   Future<void> _notifyIfNeeded(SyncEvent event) async {
     final type = event.envelope.type;
-    if (type != SyncType.message && type != SyncType.state) return;
+    if (type != SyncType.message &&
+        type != SyncType.state &&
+        type != SyncType.memberJoin &&
+        type != SyncType.memberLeave &&
+        type != SyncType.joinRequest &&
+        type != SyncType.recoveryRequest &&
+        type != SyncType.memberAccept) {
+      return;
+    }
     try {
-      final title =
-          type == SyncType.message ? 'Nuevo mensaje' : 'Nuevo estado';
-      final body = event.payload.data['preview'] as String? ?? 'Toca para ver';
-      // Id derivado del sobre: si la app y el servicio en segundo
-      // plano notifican lo mismo, se reemplazan en vez de duplicarse.
+      final (title, body) = _notificationCopyFor(event);
       await _notifications.show(
         title: title,
         body: body,
         id: NotificationService.stableId(event.envelope.id),
       );
-    } catch (_) {
-      // Una notificación fallida no debe afectar la entrega.
+    } catch (_) {}
+  }
+
+  (String, String) _notificationCopyFor(SyncEvent event) {
+    final d = event.payload.data;
+    switch (event.envelope.type) {
+      case SyncType.message:
+        final intent = d['intent'] as String?;
+        if (intent == 'buzz') {
+          return ('⚡ Zumbido', d['preview'] as String? ?? 'Te mandó un zumbido');
+        }
+        return ('Nuevo mensaje', d['preview'] as String? ?? 'Toca para ver');
+      case SyncType.state:
+        final sub = d['subtype'] as String?;
+        if (sub == 'status') {
+          final s = d['status'] as Map?;
+          final text = s?['text'] as String? ?? '';
+          return ('💭 Actualizó su estado', text);
+        }
+        if (sub == 'location') {
+          return ('📍 Nueva ubicación', 'Toca para ver en el mapa');
+        }
+        return ('Nuevo estado', d['preview'] as String? ?? '');
+      case SyncType.memberJoin:
+        final m = d['member'] as Map?;
+        final name = m?['displayName'] as String? ?? 'Alguien';
+        return ('👤 Nuevo integrante', '$name se unió al grupo');
+      case SyncType.memberLeave:
+        return ('👋 Salió un integrante', 'Alguien salió del grupo');
+      case SyncType.joinRequest:
+        final name = d['displayName'] as String? ?? 'Alguien';
+        return ('👤 Quiere unirse', '$name quiere unirse. Toca para aprobar');
+      case SyncType.recoveryRequest:
+        final name = d['displayName'] as String? ?? 'Alguien';
+        return ('🔄 Recuperación', '$name quiere recuperar su cuenta');
+      case SyncType.memberAccept:
+        return ('✅ Bienvenido', 'Ya eres parte del grupo');
+      default:
+        return ('Ailoviu', '');
     }
   }
 
   void _setStatus(SyncStatus status) {
     if (_status == status) return;
     _status = status;
-    if (!_statusController.isClosed) {
-      _statusController.add(status);
-    }
+    if (!_statusController.isClosed) _statusController.add(status);
   }
 
-  /// Cierra el servicio.
   Future<void> dispose() async {
     await _incomingSub?.cancel();
     await _statusSub?.cancel();
