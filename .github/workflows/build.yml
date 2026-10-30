@@ -83,6 +83,15 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
+      # NUEVO: cache de NDK (evita descargar 1.5 GB cada build)
+      - name: Cache de NDK
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/ndk
+          key: ndk-r28c-${{ runner.os }}
+          restore-keys: |
+            ndk-r28c-
+
       - name: Generar archivos Android faltantes
         run: |
           flutter create --platforms=android --org com.iruletas --project-name ailoviu .
@@ -123,8 +132,27 @@ jobs:
       - name: Descargar dependencias
         run: flutter pub get
 
+      # COMPILAR CON FILTRO DE LOGS CORREGIDO
       - name: Compilar APK
-        run: flutter build apk --release --target-platform android-arm64
+        run: |
+          set -o pipefail
+          flutter build apk --release --target-platform android-arm64 2>&1 \
+            | tee build.log \
+            | grep -v "^\[" \
+            | grep -v "Unzipping" \
+            | grep -v "Downloading" \
+            | grep -v "Caught exception: Already watching" \
+            | grep -v "^Note: Some input files" \
+            | grep -v "^3 warnings$"
+
+      # NUEVO: subir el log si el build falla (por si el filtro se comió algo)
+      - name: Subir log en caso de fallo
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-failure
+          path: build.log
+          retention-days: 7
 
       - name: Subir APK como artifact
         uses: actions/upload-artifact@v4
