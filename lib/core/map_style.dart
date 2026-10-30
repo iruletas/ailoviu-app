@@ -5,16 +5,25 @@ class MapStyle {
   MapStyle._();
 
   // ── URLs de los tiles ──────────────────────────────────────────────
+  
   /// CARTO Voyager (claro). Limpio, estilo Google Maps.
-  static const String tileUrl =
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  static String getTileUrl(String key) {
+    if (key.isEmpty) return osmTileUrl;
+    return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=$key';
+  }
 
-  /// CARTO Dark Matter (oscuro). Ideal para el modo oscuro.
-  static const String tileUrlDark =
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  /// CARTO Dark Matter (oscuro).
+  static String getTileUrlDark(String key) {
+    if (key.isEmpty) return osmTileUrl;
+    return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=$key';
+  }
 
-  /// Atribución requerida por OSM y CARTO.
-  static const String attribution = '© OpenStreetMap · © CARTO';
+  /// OSM estándar (fallback si no hay API key).
+  static const String osmTileUrl =
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+  static const String attributionCarto = 'OpenStreetMap · CARTO';
+  static const String attributionOsm = '© OpenStreetMap contributors';
 
   // ── Fondos mientras cargan los tiles ───────────────────────────────
   static const Color bgLight = Color(0xFFF2EFE9);
@@ -22,8 +31,6 @@ class MapStyle {
   static const Color bgAmoled = Color(0xFF0A0A0A);
 
   // ── Filtro AMOLED ──────────────────────────────────────────────────
-  /// Solo oscurece (multiplica por 0.75), nunca amplifica.
-  /// Evita el bug de sobresaturación a blanco.
   static const List<double> amoledMatrix = [
     0.75, 0, 0, 0, 0,
     0, 0.75, 0, 0, 0,
