@@ -7,9 +7,9 @@ import '../services/device_identity_service.dart';
 import 'prefs_provider.dart';
 import 'sync_providers.dart';
 
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 // Claves de persistencia (prefijo home.)
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 
 class _Keys {
   _Keys._();
@@ -20,35 +20,29 @@ class _Keys {
   static const distance = 'home.distance';
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// deviceId local (independiente de sync)
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// deviceId local
+// ══════════════════════════════════════════════════════════════════════
 
-/// Servicio de identidad del dispositivo. Crea el deviceId si no
-/// existe, sin depender de que haya pareja o sync.
 final deviceIdentityServiceProvider = Provider<DeviceIdentityService>(
   (ref) => DeviceIdentityService(keyStore: ref.watch(keyStoreProvider)),
 );
 
-/// deviceId de este dispositivo.
-///
-/// Se crea la primera vez que se abre la app y se mantiene en
-/// [KeyStore] (Keystore Android). No depende de SyncService: existe
-/// aunque nunca haya pareja emparejada.
 final myDeviceIdProvider = FutureProvider<String>((ref) async {
   final service = ref.watch(deviceIdentityServiceProvider);
   return service.getOrCreate();
 });
 
-// ═══════════════════════════════════════════════════════════════════════
-// Statuses (estado de cada miembro)
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// Statuses
+// ══════════════════════════════════════════════════════════════════════
 
 class MyStatusNotifier extends StateNotifier<PartnerStatus?> {
-  MyStatusNotifier(this._store) : super(null) {
+  MyStatusNotifier(this._ref, this._store) : super(null) {
     _load();
   }
 
+  final Ref _ref;
   final SecureStore _store;
 
   Future<void> _load() async {
@@ -84,20 +78,26 @@ class MyStatusNotifier extends StateNotifier<PartnerStatus?> {
     );
     state = status;
     await _store.setJson(_Keys.myStatus, status.toJson());
+    _tryEnqueue(statusToSyncPayload(status));
   }
 
   Future<void> clear() async {
     state = null;
     await _store.remove(_Keys.myStatus);
   }
+
+  void _tryEnqueue(Map<String, dynamic> payload) {
+    _ref.read(syncServiceProvider.future).then((service) {
+      service.enqueue(type: SyncType.state, payload: payload);
+    }).catchError((_) {});
+  }
 }
 
 final myStatusProvider =
     StateNotifierProvider<MyStatusNotifier, PartnerStatus?>(
-  (ref) => MyStatusNotifier(ref.read(secureStoreProvider)),
+  (ref) => MyStatusNotifier(ref, ref.read(secureStoreProvider)),
 );
 
-/// Estados de los demás miembros (uno por deviceId). No incluye el mío.
 class StatusesNotifier extends StateNotifier<Map<String, PartnerStatus>> {
   StatusesNotifier(this._store) : super(const {}) {
     _load();
@@ -149,16 +149,17 @@ final statusesProvider =
   (ref) => StatusesNotifier(ref.read(secureStoreProvider)),
 );
 
-// ═══════════════════════════════════════════════════════════════════════
-// Locations (N miembros)
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// Locations
+// ══════════════════════════════════════════════════════════════════════
 
 class LocationsNotifier extends StateNotifier<LocationsSnapshot> {
-  LocationsNotifier(this._store, this._myDeviceId)
+  LocationsNotifier(this._ref, this._store, this._myDeviceId)
       : super(LocationsSnapshot(myDeviceId: _myDeviceId)) {
     _load();
   }
 
+  final Ref _ref;
   final SecureStore _store;
   final String _myDeviceId;
 
@@ -184,6 +185,7 @@ class LocationsNotifier extends StateNotifier<LocationsSnapshot> {
     updated[loc.deviceId] = loc;
     state = LocationsSnapshot(all: updated, myDeviceId: _myDeviceId);
     await _persist();
+    _tryEnqueue(locationToSyncPayload(loc));
   }
 
   Future<void> saveOtherLocation(PartnerLocation loc) async {
@@ -206,23 +208,31 @@ class LocationsNotifier extends StateNotifier<LocationsSnapshot> {
     };
     await _store.setJson(_Keys.locations, json);
   }
+
+  void _tryEnqueue(Map<String, dynamic> payload) {
+    _ref.read(syncServiceProvider.future).then((service) {
+      service.enqueue(type: SyncType.state, payload: payload);
+    }).catchError((_) {});
+  }
 }
 
 final locationsProvider =
     StateNotifierProvider<LocationsNotifier, LocationsSnapshot>((ref) {
   final myId = ref.watch(myDeviceIdProvider).valueOrNull ?? '';
-  return LocationsNotifier(ref.read(secureStoreProvider), myId);
+  return LocationsNotifier(ref, ref.read(secureStoreProvider), myId);
 });
 
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 // Buzz
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 
 class BuzzNotifier extends StateNotifier<BuzzState> {
-  BuzzNotifier(this._store) : super(BuzzState(todayDate: DateTime.now())) {
+  BuzzNotifier(this._ref, this._store)
+      : super(BuzzState(todayDate: DateTime.now())) {
     _load();
   }
 
+  final Ref _ref;
   final SecureStore _store;
 
   Future<void> _load() async {
@@ -231,12 +241,10 @@ class BuzzNotifier extends StateNotifier<BuzzState> {
     try {
       final saved = BuzzState.fromJson(json);
       state = saved.resetIfNewDay(DateTime.now());
-    } catch (_) {
-      // Ignorar.
-    }
+    } catch (_) {}
   }
 
-  Future<bool> tryBuzz({required WidgetRef ref}) async {
+  Future<bool> tryBuzz() async {
     final now = DateTime.now();
     final current = state.resetIfNewDay(now);
     if (!current.canBuzz(now: now)) {
@@ -244,26 +252,32 @@ class BuzzNotifier extends StateNotifier<BuzzState> {
       return false;
     }
 
-    // TODO: cuando la UI de sync esté, aquí va:
-    // await ref.read(syncServiceProvider.future).enqueue(
-    //   type: SyncType.message,
-    //   payload: {'intent': 'buzz', 'sentAt': now.toIso8601String()},
-    // );
-
     final updated = current.markSent(now);
     state = updated;
     await _store.setJson(_Keys.buzz, updated.toJson());
+
+    _ref.read(syncServiceProvider.future).then((service) {
+      service.enqueue(
+        type: SyncType.message,
+        payload: {
+          'intent': 'buzz',
+          'sentAt': now.toIso8601String(),
+          'preview': 'Te mandó un zumbido ⚡',
+        },
+      );
+    }).catchError((_) {});
+
     return true;
   }
 }
 
 final buzzProvider = StateNotifierProvider<BuzzNotifier, BuzzState>(
-  (ref) => BuzzNotifier(ref.read(secureStoreProvider)),
+  (ref) => BuzzNotifier(ref, ref.read(secureStoreProvider)),
 );
 
-// ═══════════════════════════════════════════════════════════════════════
-// Distance config
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// Distance
+// ══════════════════════════════════════════════════════════════════════
 
 class DistanceNotifier extends StateNotifier<DistanceConfig> {
   DistanceNotifier(this._store) : super(const DistanceConfig()) {
@@ -277,9 +291,7 @@ class DistanceNotifier extends StateNotifier<DistanceConfig> {
     if (json == null) return;
     try {
       state = DistanceConfig.fromJson(json);
-    } catch (_) {
-      // Ignorar.
-    }
+    } catch (_) {}
   }
 
   Future<void> setFixedKm(int? km) async {
@@ -309,14 +321,12 @@ final distanceProvider =
   (ref) => DistanceNotifier(ref.read(secureStoreProvider)),
 );
 
-// ═══════════════════════════════════════════════════════════════════════
-// Helpers para sync entrante (N miembros)
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// Sync entrante (N miembros)
+// ══════════════════════════════════════════════════════════════════════
 
-/// Procesa un payload de sync entrante relacionado con home.
-/// Llamar desde un listener de `syncEventsProvider`.
 Future<void> handleHomeSyncPayload({
-  required WidgetRef ref,
+  required Ref ref,
   required SyncType type,
   required Map<String, dynamic> data,
 }) async {
@@ -346,18 +356,14 @@ Future<void> handleHomeSyncPayload({
         await ref.read(locationsProvider.notifier).saveOtherLocation(loc);
         break;
     }
-  } catch (_) {
-    // Payload malformado: ignorar.
-  }
+  } catch (_) {}
 }
 
-/// Serializa el estado local para mandarlo por sync.
 Map<String, dynamic> statusToSyncPayload(PartnerStatus status) => {
       'subtype': 'status',
       'status': status.toJson(),
     };
 
-/// Serializa la ubicación local para mandarlo por sync.
 Map<String, dynamic> locationToSyncPayload(PartnerLocation loc) => {
       'subtype': 'location',
       'location': loc.toJson(),
