@@ -4,18 +4,14 @@ import 'package:flutter/material.dart';
 class MapStyle {
   MapStyle._();
 
-  /// Tinte aplicado sobre los tiles de OSM.
-  /// Multiplicamos los colores por gris claro para bajar saturación.
-  static const Color tint = Color(0xFFFFFFFF);
-
   /// Matriz de color para `ColorFiltered`.
-  /// Esta matriz convierte el mapa a un estilo blanco/gris suave.
-  /// (Aumenta el brillo, reduce el contraste de los colores).
+  /// Esta matriz desatura un poco los colores y les da un toque de brillo
+  /// (offset 20) para un look limpio, pero sin quemar los detalles a blanco puro.
   static const List<double> colorMatrix = [
-    1.3, 0, 0, 0, 50, // R
-    0, 1.3, 0, 0, 50, // G
-    0, 0, 1.3, 0, 50, // B
-    0, 0, 0, 0.85, 0, // A (un poco transparente para que se integre)
+    1.0, 0.2, 0.2, 0, 20, // R
+    0.2, 1.0, 0.2, 0, 20, // G
+    0.2, 0.2, 1.0, 0, 20, // B
+    0.0, 0.0, 0.0, 1.0, 0,  // A
   ];
 
   /// Color de la línea de distancia entre los dos avatares.
@@ -25,7 +21,7 @@ class MapStyle {
   static const double lineWidth = 3.0;
 
   /// Zoom inicial del mapa.
-  static const double initialZoom = 14.0; // un poco más cerca
+  static const double initialZoom = 14.0;
 
   /// Zoom máximo.
   static const double maxZoom = 18.0;
