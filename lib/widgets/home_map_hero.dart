@@ -22,7 +22,6 @@ class HomeMapHero extends ConsumerStatefulWidget {
 
   final double height;
 
-  /// Callback al tocar el badge "＋" de mi avatar.
   final VoidCallback? onEditStatus;
 
   @override
@@ -44,7 +43,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     setState(() => _requestingLocation = true);
 
     try {
-      // 1. Permisos + servicio del sistema.
       final permission = await _locationService.ensurePermission();
 
       switch (permission) {
@@ -66,14 +64,12 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 
       if (!mounted) return;
 
-      // 2. deviceId.
       final deviceId = ref.read(myDeviceIdProvider).valueOrNull ?? '';
       if (deviceId.isEmpty) {
         _showMessage('Espera a que la app termine de inicializar');
         return;
       }
 
-      // 3. Ubicación.
       final attempt = await _locationService.getCurrentLocation(
         deviceId: deviceId,
       );
@@ -218,24 +214,27 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
   Widget _buildMap(BuildContext context, LocationsSnapshot locations) {
     final center = _centerFor(locations);
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: center,
-        initialZoom: MapStyle.initialZoom,
-        minZoom: MapStyle.minZoom,
-        maxZoom: MapStyle.maxZoom,
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix(MapStyle.colorMatrix),
+      child: FlutterMap(
+        options: MapOptions(
+          initialCenter: center,
+          initialZoom: MapStyle.initialZoom,
+          minZoom: MapStyle.minZoom,
+          maxZoom: MapStyle.maxZoom,
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+          ),
         ),
+        children: [
+          TileLayer(
+            urlTemplate: MapStyle.tileUrl,
+            userAgentPackageName: 'com.iruletas.ailoviu',
+          ),
+          if (locations.canDrawLines) _buildLinesLayer(locations),
+          _buildAvatarsLayer(context, locations),
+        ],
       ),
-      children: [
-        TileLayer(
-          urlTemplate: MapStyle.tileUrl,
-          userAgentPackageName: 'com.iruletas.ailoviu',
-        ),
-        if (locations.canDrawLines) _buildLinesLayer(locations),
-        _buildAvatarsLayer(context, locations),
-      ],
     );
   }
 
@@ -277,7 +276,9 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     LocationsSnapshot snapshot,
   ) {
     final relationship = ref.read(relationshipProvider);
-    final statuses = ref.watch(statusesProvider);
+    final partnerStatuses = ref.watch(statusesProvider);
+    final myStatus = ref.watch(myStatusProvider);
+    
     final locs = snapshot.everyone;
     final names = relationship.visibleNames;
     final markers = <Marker>[];
@@ -286,7 +287,12 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       final loc = locs[i];
       final name = i < names.length ? names[i] : '';
       final isMe = loc.deviceId == snapshot.myDeviceId;
-      final hasStatus = statuses.containsKey(loc.deviceId);
+      
+      // Si es mi avatar, chequeo myStatus. Si no, busco en partnerStatuses.
+      final hasStatus = isMe 
+          ? myStatus != null 
+          : partnerStatuses.containsKey(loc.deviceId);
+
       markers.add(
         Marker(
           point: LatLng(loc.latitude, loc.longitude),
@@ -532,13 +538,14 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
           ),
         ),
 
+        // Indicador de estado (ahora sí aparece si hay estado)
         if (widget.hasStatus)
           Positioned(
             top: 0,
             left: 0,
             child: Container(
-              width: 12,
-              height: 12,
+              width: 14,
+              height: 14,
               decoration: BoxDecoration(
                 color: scheme.tertiary,
                 shape: BoxShape.circle,
@@ -547,6 +554,7 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
             ),
           ),
 
+        // Badge "＋" para mi avatar
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
             bottom: -2,
