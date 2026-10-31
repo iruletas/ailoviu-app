@@ -565,7 +565,7 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
-        // 1. El avatar en sí. Un poco más grande (56x56).
+        // 1. El avatar en sí.
         Container(
           width: 56,
           height: 56,
@@ -573,7 +573,7 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
             color: widget.isMe
                 ? scheme.primaryContainer
                 : scheme.secondaryContainer,
-            borderRadius: BorderRadius.circular(22), // Un pelín más redondo
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(
               color: scheme.surface,
               width: 3,
@@ -617,13 +617,11 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
         ),
 
         // 2. El badge (+ o estado), anclado a la esquina inferior derecha.
+        // Usamos -11 para que sobresalga justo a la mitad.
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
-            // Como el avatar es 56x56, si lo posicionamos en bottom: 0,
-            // right: 0, queda dentro del cuadrado. Para que sobresalga
-            // como un pin, lo movemos un poco hacia afuera.
-            bottom: 0,
-            right: 0,
+            bottom: -11,
+            right: -11,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _badgePressed = true),
