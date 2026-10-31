@@ -11,9 +11,12 @@ import '../providers/home_providers.dart';
 /// entera.
 ///
 /// Reglas:
-/// - Al montarse (primer frame): dispara refresh si el usuario ya
-///   compartió ubicación antes. Si nunca compartió, no hace nada
-///   (no queremos diálogo de permiso sorpresivo al primer arranque).
+/// - No dispara nada hasta que `myDeviceIdProvider` resuelva (antes,
+///   el `deviceId` sería `''` y `Geolocator` con deviceId vacío
+///   rompe el primer frame — ese fue el bug de la pantalla negra).
+/// - Al montarse (primer frame + deviceId listo): dispara refresh si
+///   el usuario ya compartió ubicación antes. Si nunca compartió, no
+///   hace nada (no queremos diálogo de permiso sorpresivo).
 /// - En cada `resumed` desde `paused`/`inactive`/`hidden`: dispara
 ///   refresh, pero solo si pasaron al menos [throttle] desde el
 ///   último intento. Evita spam si el usuario alterna apps rápido.
@@ -43,7 +46,6 @@ class _LocationBootstrapState extends ConsumerState<LocationBootstrap>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onFirstRun());
   }
 
   @override
@@ -52,20 +54,11 @@ class _LocationBootstrapState extends ConsumerState<LocationBootstrap>
     super.dispose();
   }
 
-  Future<void> _onFirstRun() async {
-    if (!mounted || _firstRunDone) return;
-    _firstRunDone = true;
-    await _attemptRefresh(force: false);
-  }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final previous = _lastLifecycle;
     _lastLifecycle = state;
 
-    // Solo disparar cuando pasamos de background/inactive/hidden a
-    // resumed. Ignorar el primer `resumed` (lo cubre _onFirstRun) y
-    // los ciclos paused ↔ inactive internos.
     final cameFromBackground = previous == AppLifecycleState.paused ||
         previous == AppLifecycleState.hidden ||
         previous == AppLifecycleState.inactive;
@@ -75,10 +68,22 @@ class _LocationBootstrapState extends ConsumerState<LocationBootstrap>
     }
   }
 
+  /// Primer refresh: se dispara cuando el `deviceId` ya está listo.
+  /// Si el provider tarda o falla, no se dispara (mejor no pedir
+  /// ubicación sin identidad que romper el frame).
+  Future<void> _onDeviceIdReady(String deviceId) async {
+    if (!mounted || _firstRunDone || deviceId.isEmpty) return;
+    _firstRunDone = true;
+    await _attemptRefresh(force: false);
+  }
+
   /// Intenta el refresh. Con [force] `false`, respeta el throttle y
   /// no pide permiso si nunca se compartió ubicación.
   Future<void> _attemptRefresh({required bool force}) async {
     if (!mounted) return;
+
+    final deviceId = ref.read(myDeviceIdProvider).valueOrNull ?? '';
+    if (deviceId.isEmpty) return; // todavía no hay identidad
 
     final now = DateTime.now();
     if (!force && _lastAttemptAt != null) {
@@ -89,17 +94,30 @@ class _LocationBootstrapState extends ConsumerState<LocationBootstrap>
 
     try {
       final notifier = ref.read(locationsProvider.notifier);
-      // refreshMyLocation() ya sabe decidir si pedir permiso o no
-      // (no lo hace si nunca se compartió). Es fire-and-forget: no
-      // bloqueamos el hilo de UI esperando el GPS.
       await notifier.refreshMyLocation();
     } catch (_) {
-      // El refresh es un extra: nunca debe romper la app. Si falla
-      // (sin permiso, sin GPS, sin red), se reintenta en el próximo
-      // resume.
+      // El refresh es un extra: nunca debe romper la app.
     }
   }
 
   @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
+  Widget build(BuildContext context) {
+    // Escucha la resolución del deviceId. Cuando llegue no-vacío,
+    // dispara el primer refresh. `ref.listen` en build es seguro
+    // porque solo se suscribe, no dispara rebuilds del árbol.
+    ref.listen<String>(myDeviceIdProvider, (previous, next) {
+      next.whenData((id) => _onDeviceIdReady(id));
+    });
+
+    // Caso ya resuelto (por si llegó antes de que este widget se
+    // montara, cosa que no debería pasar pero por si acaso).
+    final existing = ref.read(myDeviceIdProvider).valueOrNull;
+    if (existing != null && existing.isNotEmpty && !_firstRunDone) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _onDeviceIdReady(existing);
+      });
+    }
+
+    return const SizedBox.shrink();
+  }
 }
