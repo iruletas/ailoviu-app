@@ -14,8 +14,8 @@ import '../providers/relationship_providers.dart';
 import '../providers/settings_providers.dart';
 import '../services/location_service.dart';
 import 'carto_key_dialog.dart';
-import 'home/map_dock.dart';
-import 'home/map_feedback.dart';
+import 'map_dock.dart';
+import 'map_feedback.dart';
 
 /// Mapa hero de Hogar.
 class HomeMapHero extends ConsumerStatefulWidget {
