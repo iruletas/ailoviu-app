@@ -14,6 +14,8 @@ import '../providers/relationship_providers.dart';
 import '../providers/settings_providers.dart';
 import '../services/location_service.dart';
 import 'carto_key_dialog.dart';
+import 'home/map_dock.dart';
+import 'home/map_feedback.dart';
 
 /// Mapa hero de Hogar.
 class HomeMapHero extends ConsumerStatefulWidget {
@@ -31,84 +33,77 @@ class HomeMapHero extends ConsumerStatefulWidget {
 }
 
 class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
-  final _locationService = LocationService();
   final _mapController = MapController();
   bool _pressed = false;
   bool _requestingLocation = false;
+
+  /// Umbral mínimo de movimiento (en metros) para re-centrar el mapa
+  /// tras un update de mi ubicación. Evita temblor del GPS.
+  static const double _recenterThresholdMeters = 20.0;
 
   void _setPressed(bool v) {
     if (_pressed == v) return;
     setState(() => _pressed = v);
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // Refresh de ubicación (FAB / estado vacío)
+  // ════════════════════════════════════════════════════════════════
+
   Future<void> _requestAndShareLocation() async {
     if (_requestingLocation) return;
     setState(() => _requestingLocation = true);
 
     try {
-      final permission = await _locationService.ensurePermission();
-
-      switch (permission) {
-        case LocationResult.serviceDisabled:
-          _showLocationServiceDialog();
-          return;
-        case LocationResult.permissionDeniedForever:
-          _showPermissionForeverDialog();
-          return;
-        case LocationResult.permissionDenied:
-          _showMessage('Permiso de ubicación denegado');
-          return;
-        case LocationResult.success:
-          break;
-        default:
-          _showMessage('No se pudo obtener el permiso');
-          return;
-      }
+      final result =
+          await ref.read(locationsProvider.notifier).forceRefreshMyLocation();
 
       if (!mounted) return;
 
-      final deviceId = ref.read(myDeviceIdProvider).valueOrNull ?? '';
-      if (deviceId.isEmpty) {
-        _showMessage('Espera a que la app termine de inicializar');
-        return;
-      }
-
-      final attempt = await _locationService.getCurrentLocation(
-        deviceId: deviceId,
-      );
-
-      switch (attempt.result) {
+      switch (result) {
         case LocationResult.success:
-          final loc = attempt.location;
-          if (loc == null) {
-            _showMessage('No se pudo obtener la ubicación');
-            return;
-          }
-          await ref.read(locationsProvider.notifier).saveMyLocation(loc);
-          _showMessage('Ubicación compartida');
-          return;
+          MapFeedback.showSuccess(context, 'Ubicación actualizada 📍');
+          break;
+        case LocationResult.serviceDisabled:
+          _showLocationServiceDialog();
+          break;
+        case LocationResult.permissionDeniedForever:
+          _showPermissionForeverDialog();
+          break;
+        case LocationResult.permissionDenied:
+          MapFeedback.showError(
+            context,
+            'Permiso de ubicación denegado',
+          );
+          break;
         case LocationResult.timeout:
-          _showMessage('La ubicación tardó demasiado. Intenta de nuevo.');
-          return;
+          MapFeedback.showErrorWithIcon(
+            context,
+            'La ubicación tardó demasiado',
+            Icons.timer_rounded,
+          );
+          break;
+        case LocationResult.stale:
+          MapFeedback.showError(
+            context,
+            'No se obtuvo una ubicación fresca',
+          );
+          break;
         case LocationResult.error:
-        default:
-          _showMessage('No se pudo obtener la ubicación');
-          return;
+          MapFeedback.showError(
+            context,
+            'No se pudo obtener la ubicación',
+          );
+          break;
       }
     } finally {
       if (mounted) setState(() => _requestingLocation = false);
     }
   }
 
-  void _showMessage(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
+  // ════════════════════════════════════════════════════════════════
+  // Diálogos de permiso / servicio
+  // ════════════════════════════════════════════════════════════════
 
   void _showLocationServiceDialog() {
     if (!mounted) return;
@@ -129,7 +124,8 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
           FilledButton(
             onPressed: () async {
               Navigator.of(context).pop();
-              await _locationService.openLocationSettings();
+              final service = ref.read(locationServiceProvider);
+              await service.openLocationSettings();
             },
             child: const Text('Abrir ajustes'),
           ),
@@ -156,7 +152,8 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
           FilledButton(
             onPressed: () async {
               Navigator.of(context).pop();
-              await _locationService.openAppSettings();
+              final service = ref.read(locationServiceProvider);
+              await service.openAppSettings();
             },
             child: const Text('Abrir ajustes'),
           ),
@@ -165,23 +162,43 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     );
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // build
+  // ════════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
     final locations = ref.watch(locationsProvider);
     final scheme = Theme.of(context).colorScheme;
     final points = locations.everyone;
 
-    // Escuchar cuando se guarda la ubicación por primera vez para recentrar el mapa
+    // Re-centra el mapa cuando cambia MI ubicación, ya sea por un
+    // refresh al abrir, por el FAB, o por un update entrante. Solo
+    // se mueve si el desplazamiento supera el umbral.
     ref.listen<LocationsSnapshot>(locationsProvider, (previous, next) {
       final prevLoc = previous?.all[next.myDeviceId];
       final nextLoc = next.all[next.myDeviceId];
-      // Si antes no había ubicación propia y ahora sí, movemos el mapa
-      if (prevLoc == null && nextLoc != null) {
-        _mapController.move(
-          LatLng(nextLoc.latitude, nextLoc.longitude),
-          MapStyle.initialZoom,
-        );
-      }
+      if (nextLoc == null) return;
+
+      final movedEnough = prevLoc == null ||
+          _distanceKmBetween(
+                lat1: prevLoc.latitude,
+                lon1: prevLoc.longitude,
+                lat2: nextLoc.latitude,
+                lon2: nextLoc.longitude,
+              ) *
+                  1000 >
+              _recenterThresholdMeters;
+
+      if (!movedEnough) return;
+
+      // Haptic contextual al re-centrar automáticamente. Solo si el
+      // mapa va a moverse, para no vibrar por ruido.
+      HapticFeedback.selectionClick();
+      _mapController.move(
+        LatLng(nextLoc.latitude, nextLoc.longitude),
+        MapStyle.initialZoom,
+      );
     });
 
     return GestureDetector(
@@ -227,19 +244,18 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     );
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // Mapa
+  // ════════════════════════════════════════════════════════════════
+
   Widget _buildMap(BuildContext context, LocationsSnapshot locations) {
     final center = _centerFor(locations);
     final cartoKey = ref.watch(cartoKeyProvider);
     final hasKey = cartoKey.isNotEmpty;
 
-    // FORZAMOS SIEMPRE EL MAPA CLARO.
-    // Si hay key, usamos Voyager (claro). Si no, usamos OSM (también claro).
     final tileUrl = hasKey
         ? MapStyle.getTileUrl(cartoKey)
         : MapStyle.osmTileUrl;
-
-    final attribution =
-        hasKey ? MapStyle.attributionCarto : MapStyle.attributionOsm;
 
     final map = FlutterMap(
       mapController: _mapController,
@@ -248,7 +264,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
         initialZoom: MapStyle.initialZoom,
         minZoom: MapStyle.minZoom,
         maxZoom: MapStyle.maxZoom,
-        // Fondo de carga siempre claro para que combine con el mapa
         backgroundColor: MapStyle.bgLight,
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
@@ -263,13 +278,12 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
         ),
         if (locations.canDrawLines) _buildLinesLayer(locations),
         _buildAvatarsLayer(context, locations),
-        // Atribución manual, pequeña, discreta y sin fondo (siempre oscura porque el mapa es claro)
         const Align(
           alignment: Alignment.bottomRight,
           child: Padding(
             padding: EdgeInsets.all(4.0),
             child: Text(
-              'OpenStreetMap · CARTO', // El texto se actualiza dinámicamente abajo
+              'OpenStreetMap · CARTO',
               style: TextStyle(
                 fontSize: 9,
                 color: Colors.black45,
@@ -280,34 +294,28 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       ],
     );
 
-    // Ya no aplicamos el filtro AMOLED al mapa. Se ve claro siempre.
-    // Si no hay key, agregamos el botón de configuración.
-    if (!hasKey) {
-      return Stack(
-        children: [
-          map,
-          Positioned(
-            top: 8,
-            right: 8,
-            child: IconButton.filledTonal(
-              onPressed: () => CartoKeyDialog.show(context),
-              icon: const Icon(Icons.key_rounded, size: 18),
-              tooltip: 'Configurar mapa (CARTO)',
-              style: IconButton.styleFrom(
-                backgroundColor: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.9),
-                foregroundColor:
-                    Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
+    // Dock flotante arriba a la derecha: siempre visible. Si falta
+    // CARTO, muestra también el botón para configurarla, dentro del
+    // mismo dock (no como botón suelto).
+    return Stack(
+      children: [
+        map,
+        Positioned(
+          top: 8,
+          right: 8,
+          child: MapDock(
+            busy: _requestingLocation,
+            onMyLocationPressed: _requestAndShareLocation,
+            onCartoPressed: hasKey
+                ? null
+                : () {
+                    HapticFeedback.lightImpact();
+                    CartoKeyDialog.show(context);
+                  },
           ),
-        ],
-      );
-    }
-
-    return map;
+        ),
+      ],
+    );
   }
 
   LatLng _centerFor(LocationsSnapshot snapshot) {
@@ -350,7 +358,7 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     final relationship = ref.read(relationshipProvider);
     final partnerStatuses = ref.watch(statusesProvider);
     final myStatus = ref.watch(myStatusProvider);
-    
+
     final locs = snapshot.everyone;
     final names = relationship.visibleNames;
     final markers = <Marker>[];
@@ -359,10 +367,8 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       final loc = locs[i];
       final name = i < names.length ? names[i] : '';
       final isMe = loc.deviceId == snapshot.myDeviceId;
-      
-      final status = isMe 
-          ? myStatus 
-          : partnerStatuses[loc.deviceId];
+
+      final status = isMe ? myStatus : partnerStatuses[loc.deviceId];
 
       markers.add(
         Marker(
@@ -380,6 +386,10 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     }
     return MarkerLayer(markers: markers);
   }
+
+  // ════════════════════════════════════════════════════════════════
+  // Estado vacío y badge de distancia
+  // ════════════════════════════════════════════════════════════════
 
   Widget _buildEmptyState(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -528,6 +538,10 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
   double _deg2rad(double deg) => deg * (math.pi / 180.0);
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// Avatar marker
+// ══════════════════════════════════════════════════════════════════════
+
 class _AvatarMarker extends StatefulWidget {
   final String name;
   final bool isMe;
@@ -612,7 +626,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
           ),
         ),
 
-        // Badge de edición (donde antes estaba el +)
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
             bottom: -4,
@@ -629,13 +642,15 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                 curve:
                     _badgePressed ? Curves.easeOutCubic : Curves.easeOutBack,
                 child: Container(
-                  padding: hasStatus 
+                  padding: hasStatus
                       ? const EdgeInsets.symmetric(horizontal: 6, vertical: 2)
                       : EdgeInsets.zero,
                   width: hasStatus ? null : 22,
                   height: hasStatus ? null : 22,
                   decoration: BoxDecoration(
-                    color: hasStatus ? scheme.surfaceContainerHigh : scheme.tertiaryContainer,
+                    color: hasStatus
+                        ? scheme.surfaceContainerHigh
+                        : scheme.tertiaryContainer,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: scheme.surface, width: 2),
                   ),
@@ -644,8 +659,8 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              statusText.length > 20 
-                                  ? '${statusText.substring(0, 20)}...' 
+                              statusText.length > 20
+                                  ? '${statusText.substring(0, 20)}...'
                                   : statusText,
                               style: TextStyle(
                                 fontSize: 10,
