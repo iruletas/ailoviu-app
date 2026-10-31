@@ -368,8 +368,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       markers.add(
         Marker(
           point: LatLng(loc.latitude, loc.longitude),
-          // Aumentamos el marcador para que el badge sobresalga
-          // sin que Flutter lo recorte.
           width: 84,
           height: 84,
           child: _AvatarMarker(
@@ -565,7 +563,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
-        // 1. El avatar en sí.
         Container(
           width: 56,
           height: 56,
@@ -615,9 +612,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                   ),
           ),
         ),
-
-        // 2. El badge (+ o estado), anclado a la esquina inferior derecha.
-        // Usamos -11 para que sobresalga justo a la mitad.
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
             bottom: -11,
