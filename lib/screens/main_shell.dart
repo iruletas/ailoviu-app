@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../widgets/location_bootstrap.dart';
 import 'days_screen.dart';
 import 'games_screen.dart';
 import 'home_screen.dart';
@@ -117,8 +118,6 @@ class _MainShellState extends State<MainShell> {
     final safeTop = viewPadding.top;
     final safeBottom = viewPadding.bottom;
 
-    // Espacio reservado abajo para que el contenido no quede tapado
-    // por la navbar.
     final bottomReserved = safeBottom + _kBarHeight + _kBarBottomMargin * 2;
 
     return Scaffold(
@@ -142,6 +141,11 @@ class _MainShellState extends State<MainShell> {
               ),
             ),
           ),
+
+          // ── Bootstrap de ubicación (sin UI) ──────────────────────────
+          // Dispara refreshMyLocation() al abrir y al volver del
+          // background, con throttle de 60s.
+          const LocationBootstrap(),
 
           // ── Botón de Ajustes (arriba derecha) ────────────────────────
           Positioned(
