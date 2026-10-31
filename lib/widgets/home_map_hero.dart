@@ -256,9 +256,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 
     final map = FlutterMap(
       mapController: _mapController,
-      onMapReady: () {
-        if (mounted) setState(() => _mapReady = true);
-      },
       options: MapOptions(
         initialCenter: center,
         initialZoom: MapStyle.initialZoom,
@@ -268,6 +265,9 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
         ),
+        onMapReady: () {
+          if (mounted) setState(() => _mapReady = true);
+        },
       ),
       children: [
         TileLayer(
