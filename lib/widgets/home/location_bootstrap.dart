@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../providers/home_providers.dart';
+import '../providers/home_providers.dart';
 
 /// Dispara `refreshMyLocation()` al abrir la app y cada vez que
 /// vuelve del background (con throttle).
