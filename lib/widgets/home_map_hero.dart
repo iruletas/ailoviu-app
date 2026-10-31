@@ -63,8 +63,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 
       if (!mounted) return;
 
-      // Tras un refresh manual, centrar SIEMPRE (aunque no se haya
-      // movido, para que el botón haga algo visible).
       final mine = ref.read(locationsProvider).all[
           ref.read(myDeviceIdProvider).valueOrNull ?? ''];
       if (mine != null) {
@@ -266,7 +264,7 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
           flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
         ),
         onMapReady: () {
-          if (mounted) setState(() => _mapReady = true);
+          _mapReady = true;
         },
       ),
       children: [
@@ -370,8 +368,10 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       markers.add(
         Marker(
           point: LatLng(loc.latitude, loc.longitude),
-          width: 72,
-          height: 72,
+          // Aumentamos el marcador para que el badge sobresalga
+          // sin que Flutter lo recorte.
+          width: 84,
+          height: 84,
           child: _AvatarMarker(
             name: name,
             isMe: isMe,
@@ -565,14 +565,15 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
+        // 1. El avatar en sí. Un poco más grande (56x56).
         Container(
-          width: 52,
-          height: 52,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
             color: widget.isMe
                 ? scheme.primaryContainer
                 : scheme.secondaryContainer,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(22), // Un pelín más redondo
             border: Border.all(
               color: scheme.surface,
               width: 3,
@@ -597,7 +598,7 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
             child: initial == null
                 ? Icon(
                     Icons.person_outline,
-                    size: 22,
+                    size: 24,
                     color: widget.isMe
                         ? scheme.onPrimaryContainer
                         : scheme.onSecondaryContainer,
@@ -609,15 +610,20 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                           ? scheme.onPrimaryContainer
                           : scheme.onSecondaryContainer,
                       fontWeight: FontWeight.w800,
-                      fontSize: 20,
+                      fontSize: 22,
                     ),
                   ),
           ),
         ),
+
+        // 2. El badge (+ o estado), anclado a la esquina inferior derecha.
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
-            bottom: -4,
-            right: -10,
+            // Como el avatar es 56x56, si lo posicionamos en bottom: 0,
+            // right: 0, queda dentro del cuadrado. Para que sobresalga
+            // como un pin, lo movemos un poco hacia afuera.
+            bottom: 0,
+            right: 0,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _badgePressed = true),
@@ -631,36 +637,43 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                     _badgePressed ? Curves.easeOutCubic : Curves.easeOutBack,
                 child: Container(
                   padding: hasStatus
-                      ? const EdgeInsets.symmetric(horizontal: 6, vertical: 2)
+                      ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
                       : EdgeInsets.zero,
-                  width: hasStatus ? null : 22,
-                  height: hasStatus ? null : 22,
+                  width: hasStatus ? null : 26,
+                  height: hasStatus ? null : 26,
                   decoration: BoxDecoration(
                     color: hasStatus
                         ? scheme.surfaceContainerHigh
                         : scheme.tertiaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: scheme.surface, width: 2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: scheme.surface, width: 2.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: hasStatus
                       ? Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              statusText.length > 20
-                                  ? '${statusText.substring(0, 20)}...'
+                              statusText.length > 18
+                                  ? '${statusText.substring(0, 18)}...'
                                   : statusText,
                               style: TextStyle(
                                 fontSize: 10,
                                 color: scheme.onSurface,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ],
                         )
                       : Icon(
                           Icons.add_rounded,
-                          size: 12,
+                          size: 16,
                           color: scheme.onTertiaryContainer,
                         ),
                 ),
