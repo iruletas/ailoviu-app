@@ -563,6 +563,7 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
+        // 1. El avatar en sí.
         Container(
           width: 56,
           height: 56,
@@ -612,10 +613,14 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                   ),
           ),
         ),
+
+        // 2. El badge (+ o estado), anclado a la esquina inferior derecha.
+        // Usamos 7 para que quede mitad adentro y mitad afuera,
+        // respetando el área táctil dentro del Marker de 84x84.
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
-            bottom: -11,
-            right: -11,
+            bottom: 7,
+            right: 7,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _badgePressed = true),
