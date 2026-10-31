@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../widgets/location_bootstrap.dart';
 import 'days_screen.dart';
 import 'games_screen.dart';
 import 'home_screen.dart';
@@ -29,7 +28,6 @@ const Duration _kLabelAnimDuration = Duration(milliseconds: 220);
 const Duration _kIconScaleDuration = Duration(milliseconds: 260);
 const Duration _kPressScaleDuration = Duration(milliseconds: 120);
 
-/// Cambia a true para ver el micro-indicador pulsante del botón de ajustes.
 const bool kShowSettingsBadge = false;
 
 class _NavDestination {
@@ -125,7 +123,6 @@ class _MainShellState extends State<MainShell> {
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // ── Contenido de las pestañas ────────────────────────────────
           Positioned.fill(
             child: Padding(
               padding: EdgeInsets.only(bottom: bottomReserved),
@@ -142,12 +139,8 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
 
-          // ── Bootstrap de ubicación (sin UI) ──────────────────────────
-          // Dispara refreshMyLocation() al abrir y al volver del
-          // background, con throttle de 60s.
-          const LocationBootstrap(),
+          // LocationBootstrap temporalmente removido para diagnóstico.
 
-          // ── Botón de Ajustes (arriba derecha) ────────────────────────
           Positioned(
             top: safeTop + _kSettingsPillMargin,
             right: _kSettingsPillMargin,
@@ -157,7 +150,6 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
 
-          // ── Navbar flotante centrada abajo ───────────────────────────
           Positioned(
             left: 0,
             right: 0,
@@ -184,7 +176,6 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
-// ── Navbar flotante tipo pastilla ────────────────────────────────────────
 class _ExpressiveNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onSelect;
@@ -349,7 +340,6 @@ class _NavButtonState extends State<_NavButton> {
   }
 }
 
-// ── Botón de Ajustes: cápsula flotante M3E ────────────────────────────────
 class _SettingsCapsule extends StatefulWidget {
   final VoidCallback onPressed;
   final bool showBadge;
