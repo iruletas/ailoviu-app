@@ -3,13 +3,13 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../widgets/location_bootstrap.dart';
 import 'days_screen.dart';
 import 'games_screen.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'us_screen.dart';
 
-// ── Layout ────────────────────────────────────────────────────────────────
 const double _kBarMaxWidth = 480.0;
 const double _kBarHeight = 64.0;
 const double _kBarHorizontalMargin = 16.0;
@@ -21,7 +21,6 @@ const double _kIconSize = 24.0;
 const double _kSettingsPillSize = 48.0;
 const double _kSettingsPillMargin = 16.0;
 
-// ── Animación ─────────────────────────────────────────────────────────────
 const Duration _kTabTransitionBase = Duration(milliseconds: 250);
 const Duration _kWidthAnimDuration = Duration(milliseconds: 300);
 const Duration _kLabelAnimDuration = Duration(milliseconds: 220);
@@ -139,7 +138,10 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
 
-          // LocationBootstrap temporalmente removido para diagnóstico.
+          // Bootstrap de ubicación (sin UI). Dispara refreshMyLocation()
+          // al abrir y al volver del background, con throttle 60s.
+          // No dispara hasta que myDeviceIdProvider resuelva.
+          const LocationBootstrap(),
 
           Positioned(
             top: safeTop + _kSettingsPillMargin,
