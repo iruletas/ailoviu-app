@@ -145,11 +145,15 @@ class _MainShellState extends State<MainShell> {
           ),
 
           // ── Bootstrap de ubicación (sin UI) ──────────────────────────
+          // Positioned: sin esto, el SizedBox.shrink() que devuelve
+          // el bootstrap encoge el Stack a 0×0 y se ve todo negro.
           // Dispara refreshMyLocation() al abrir y al volver del
-          // background, con throttle de 60s. El AuthGate garantiza
-          // que este widget solo se monte después del splash mínimo
-          // de 2s, dando tiempo a Geolocator de engancharse.
-          const LocationBootstrap(),
+          // background, con throttle de 60s.
+          const Positioned(
+            top: 0,
+            left: 0,
+            child: LocationBootstrap(),
+          ),
 
           // ── Botón de Ajustes (arriba derecha) ────────────────────────
           Positioned(
