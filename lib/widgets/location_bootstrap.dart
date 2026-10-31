@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/home_providers.dart';
 
 /// Dispara `refreshMyLocation()` al abrir la app y cada vez que
-/// vuelve del background (con throttle).
-///
-/// No tiene UI: devuelve `SizedBox.shrink()`. Se monta una sola vez,
-/// en `main_shell.dart`.
+/// vuelve del background (con throttle). Se monta una sola vez en
+/// `main_shell.dart`. El `AuthGate` garantiza que el árbol real
+/// (y por ende este widget) solo se monte después de un splash
+/// mínimo de 2s, dándole tiempo a `Geolocator` de engancharse.
 class LocationBootstrap extends ConsumerStatefulWidget {
   final Duration throttle;
 
@@ -26,16 +26,39 @@ class _LocationBootstrapState extends ConsumerState<LocationBootstrap>
   DateTime? _lastAttemptAt;
   bool _firstRunDone = false;
   AppLifecycleState? _lastLifecycle;
+  ProviderSubscription<AsyncValue<String>>? _deviceIdSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    _deviceIdSub = ref.listenManual<AsyncValue<String>>(
+      myDeviceIdProvider,
+      (previous, next) {
+        switch (next) {
+          case AsyncData(:final value):
+            _onDeviceIdReady(value);
+            break;
+          case AsyncError():
+          case AsyncLoading():
+            break;
+        }
+      },
+    );
+
+    final existing = ref.read(myDeviceIdProvider).valueOrNull;
+    if (existing != null && existing.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _onDeviceIdReady(existing);
+      });
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _deviceIdSub?.close();
     super.dispose();
   }
 
@@ -51,6 +74,12 @@ class _LocationBootstrapState extends ConsumerState<LocationBootstrap>
     if (state == AppLifecycleState.resumed && cameFromBackground) {
       _attemptRefresh(force: false);
     }
+  }
+
+  Future<void> _onDeviceIdReady(String deviceId) async {
+    if (!mounted || _firstRunDone || deviceId.isEmpty) return;
+    _firstRunDone = true;
+    await _attemptRefresh(force: false);
   }
 
   Future<void> _attemptRefresh({required bool force}) async {
@@ -75,21 +104,5 @@ class _LocationBootstrapState extends ConsumerState<LocationBootstrap>
   }
 
   @override
-  Widget build(BuildContext context) {
-    // Observar el deviceId. Cuando resuelve no-vacío, disparar el
-    // primer refresh en post-frame (nunca durante build).
-    final deviceIdAsync = ref.watch(myDeviceIdProvider);
-
-    if (deviceIdAsync.hasValue && !_firstRunDone) {
-      final id = deviceIdAsync.value ?? '';
-      if (id.isNotEmpty) {
-        _firstRunDone = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _attemptRefresh(force: false);
-        });
-      }
-    }
-
-    return const SizedBox.shrink();
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
