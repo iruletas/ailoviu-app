@@ -10,6 +10,7 @@ import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'us_screen.dart';
 
+// ── Layout ────────────────────────────────────────────────────────────────
 const double _kBarMaxWidth = 480.0;
 const double _kBarHeight = 64.0;
 const double _kBarHorizontalMargin = 16.0;
@@ -21,12 +22,14 @@ const double _kIconSize = 24.0;
 const double _kSettingsPillSize = 48.0;
 const double _kSettingsPillMargin = 16.0;
 
+// ── Animación ─────────────────────────────────────────────────────────────
 const Duration _kTabTransitionBase = Duration(milliseconds: 250);
 const Duration _kWidthAnimDuration = Duration(milliseconds: 300);
 const Duration _kLabelAnimDuration = Duration(milliseconds: 220);
 const Duration _kIconScaleDuration = Duration(milliseconds: 260);
 const Duration _kPressScaleDuration = Duration(milliseconds: 120);
 
+/// Cambia a true para ver el micro-indicador pulsante del botón de ajustes.
 const bool kShowSettingsBadge = false;
 
 class _NavDestination {
@@ -115,6 +118,8 @@ class _MainShellState extends State<MainShell> {
     final safeTop = viewPadding.top;
     final safeBottom = viewPadding.bottom;
 
+    // Espacio reservado abajo para que el contenido no quede tapado
+    // por la navbar.
     final bottomReserved = safeBottom + _kBarHeight + _kBarBottomMargin * 2;
 
     return Scaffold(
@@ -122,6 +127,7 @@ class _MainShellState extends State<MainShell> {
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
+          // ── Contenido de las pestañas ────────────────────────────────
           Positioned.fill(
             child: Padding(
               padding: EdgeInsets.only(bottom: bottomReserved),
@@ -138,11 +144,14 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
 
-          // Bootstrap de ubicación (sin UI). Dispara refreshMyLocation()
-          // al abrir y al volver del background, con throttle 60s.
-          // No dispara hasta que myDeviceIdProvider resuelva.
+          // ── Bootstrap de ubicación (sin UI) ──────────────────────────
+          // Dispara refreshMyLocation() al abrir y al volver del
+          // background, con throttle de 60s. El AuthGate garantiza
+          // que este widget solo se monte después del splash mínimo
+          // de 2s, dando tiempo a Geolocator de engancharse.
           const LocationBootstrap(),
 
+          // ── Botón de Ajustes (arriba derecha) ────────────────────────
           Positioned(
             top: safeTop + _kSettingsPillMargin,
             right: _kSettingsPillMargin,
@@ -152,6 +161,7 @@ class _MainShellState extends State<MainShell> {
             ),
           ),
 
+          // ── Navbar flotante centrada abajo ───────────────────────────
           Positioned(
             left: 0,
             right: 0,
@@ -178,6 +188,7 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+// ── Navbar flotante tipo pastilla ────────────────────────────────────────
 class _ExpressiveNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onSelect;
@@ -342,6 +353,7 @@ class _NavButtonState extends State<_NavButton> {
   }
 }
 
+// ── Botón de Ajustes: cápsula flotante M3E ────────────────────────────────
 class _SettingsCapsule extends StatefulWidget {
   final VoidCallback onPressed;
   final bool showBadge;
