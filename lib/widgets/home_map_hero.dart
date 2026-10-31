@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';   // ← nueva
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -18,7 +18,6 @@ import 'carto_key_dialog.dart';
 import 'map_dock.dart';
 import 'map_feedback.dart';
 
-/// Mapa hero de Hogar.
 class HomeMapHero extends ConsumerStatefulWidget {
   const HomeMapHero({
     super.key,
@@ -37,9 +36,8 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
   final _mapController = MapController();
   bool _pressed = false;
   bool _requestingLocation = false;
+  bool _mapReady = false;
 
-  /// Umbral mínimo de movimiento (en metros) para re-centrar el mapa
-  /// tras un update de mi ubicación. Evita temblor del GPS.
   static const double _recenterThresholdMeters = 20.0;
 
   void _setPressed(bool v) {
@@ -47,9 +45,13 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     setState(() => _pressed = v);
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // Refresh de ubicación (FAB / estado vacío)
-  // ════════════════════════════════════════════════════════════════
+  void _centerOnMyLocation(LatLng target, {bool haptic = true}) {
+    if (!_mapReady) return;
+    if (haptic) HapticFeedback.selectionClick();
+    try {
+      _mapController.move(target, MapStyle.initialZoom);
+    } catch (_) {}
+  }
 
   Future<void> _requestAndShareLocation() async {
     if (_requestingLocation) return;
@@ -60,6 +62,14 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
           await ref.read(locationsProvider.notifier).forceRefreshMyLocation();
 
       if (!mounted) return;
+
+      // Tras un refresh manual, centrar SIEMPRE (aunque no se haya
+      // movido, para que el botón haga algo visible).
+      final mine = ref.read(locationsProvider).all[
+          ref.read(myDeviceIdProvider).valueOrNull ?? ''];
+      if (mine != null) {
+        _centerOnMyLocation(LatLng(mine.latitude, mine.longitude));
+      }
 
       switch (result) {
         case LocationResult.success:
@@ -101,10 +111,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       if (mounted) setState(() => _requestingLocation = false);
     }
   }
-
-  // ════════════════════════════════════════════════════════════════
-  // Diálogos de permiso / servicio
-  // ════════════════════════════════════════════════════════════════
 
   void _showLocationServiceDialog() {
     if (!mounted) return;
@@ -163,23 +169,17 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     );
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // build
-  // ════════════════════════════════════════════════════════════════
-
   @override
   Widget build(BuildContext context) {
     final locations = ref.watch(locationsProvider);
     final scheme = Theme.of(context).colorScheme;
     final points = locations.everyone;
 
-    // Re-centra el mapa cuando cambia MI ubicación, ya sea por un
-    // refresh al abrir, por el FAB, o por un update entrante. Solo
-    // se mueve si el desplazamiento supera el umbral.
     ref.listen<LocationsSnapshot>(locationsProvider, (previous, next) {
       final prevLoc = previous?.all[next.myDeviceId];
       final nextLoc = next.all[next.myDeviceId];
       if (nextLoc == null) return;
+      if (!_mapReady) return;
 
       final movedEnough = prevLoc == null ||
           _distanceKmBetween(
@@ -193,13 +193,13 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 
       if (!movedEnough) return;
 
-      // Haptic contextual al re-centrar automáticamente. Solo si el
-      // mapa va a moverse, para no vibrar por ruido.
       HapticFeedback.selectionClick();
-      _mapController.move(
-        LatLng(nextLoc.latitude, nextLoc.longitude),
-        MapStyle.initialZoom,
-      );
+      try {
+        _mapController.move(
+          LatLng(nextLoc.latitude, nextLoc.longitude),
+          MapStyle.initialZoom,
+        );
+      } catch (_) {}
     });
 
     return GestureDetector(
@@ -245,10 +245,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     );
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // Mapa
-  // ════════════════════════════════════════════════════════════════
-
   Widget _buildMap(BuildContext context, LocationsSnapshot locations) {
     final center = _centerFor(locations);
     final cartoKey = ref.watch(cartoKeyProvider);
@@ -260,6 +256,9 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
 
     final map = FlutterMap(
       mapController: _mapController,
+      onMapReady: () {
+        if (mounted) setState(() => _mapReady = true);
+      },
       options: MapOptions(
         initialCenter: center,
         initialZoom: MapStyle.initialZoom,
@@ -295,9 +294,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
       ],
     );
 
-    // Dock flotante arriba a la derecha: siempre visible. Si falta
-    // CARTO, muestra también el botón para configurarla, dentro del
-    // mismo dock (no como botón suelto).
     return Stack(
       children: [
         map,
@@ -387,10 +383,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
     }
     return MarkerLayer(markers: markers);
   }
-
-  // ════════════════════════════════════════════════════════════════
-  // Estado vacío y badge de distancia
-  // ════════════════════════════════════════════════════════════════
 
   Widget _buildEmptyState(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -539,10 +531,6 @@ class _HomeMapHeroState extends ConsumerState<HomeMapHero> {
   double _deg2rad(double deg) => deg * (math.pi / 180.0);
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// Avatar marker
-// ══════════════════════════════════════════════════════════════════════
-
 class _AvatarMarker extends StatefulWidget {
   final String name;
   final bool isMe;
@@ -626,7 +614,6 @@ class _AvatarMarkerState extends State<_AvatarMarker> {
                   ),
           ),
         ),
-
         if (widget.isMe && widget.onEditStatus != null)
           Positioned(
             bottom: -4,
