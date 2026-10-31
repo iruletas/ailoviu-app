@@ -4,25 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// Dock flotante vertical de controles del mapa.
-///
-/// Isla de cristal esmerilado con 1 o 2 FABs squircle:
-/// - "Mi ubicación" (siempre).
-/// - "Configurar CARTO" (solo si no hay API key).
-///
-/// El estado [busy] reemplaza el ícono de mi ubicación por un
-/// spinner M3E con `strokeCap.round`. Cada botón comprime a 0.90×
-/// con `easeOutCubic` al bajar y vuelve con `easeOutBack`.
-///
-/// No conoce providers ni el `MapController`: solo dispara callbacks.
 class MapDock extends StatelessWidget {
-  /// `true` mientras se está pidiendo una ubicación fresca.
   final bool busy;
-
-  /// Dispara el refresh de ubicación (mi ubicación).
   final VoidCallback onMyLocationPressed;
-
-  /// Si no es `null`, se muestra el botón de CARTO debajo del de
-  /// ubicación. Si es `null`, el dock solo tiene un botón.
   final VoidCallback? onCartoPressed;
 
   const MapDock({
@@ -38,14 +22,14 @@ class MapDock extends StatelessWidget {
     final showCarto = onCartoPressed != null;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(22),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
-          padding: const EdgeInsets.all(6),
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerLow.withValues(alpha: 0.80),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(
               color: scheme.outlineVariant.withValues(alpha: 0.35),
             ),
@@ -62,7 +46,7 @@ class MapDock extends StatelessWidget {
                 onPressed: busy ? null : onMyLocationPressed,
               ),
               if (showCarto) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 _DockButton(
                   icon: Icons.vpn_key_rounded,
                   background: scheme.tertiaryContainer,
@@ -79,9 +63,6 @@ class MapDock extends StatelessWidget {
   }
 }
 
-/// Botón squircle 44×44 del dock. Compresión 0.90× con
-/// `easeOutCubic` al bajar, `easeOutBack` al subir, y háptica
-/// `lightImpact` en cada tap.
 class _DockButton extends StatefulWidget {
   final IconData icon;
   final Color background;
@@ -139,17 +120,17 @@ class _DockButtonState extends State<_DockButton> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
-              width: 44,
-              height: 44,
+              width: 40,
+              height: 40,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: widget.background,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: widget.busy
                   ? SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 18,
+                      height: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.2,
                         strokeCap: StrokeCap.round,
@@ -158,7 +139,7 @@ class _DockButtonState extends State<_DockButton> {
                     )
                   : Icon(
                       widget.icon,
-                      size: 22,
+                      size: 20,
                       color: widget.foreground,
                     ),
             ),
