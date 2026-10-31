@@ -7,10 +7,17 @@ import '../models/auth_models.dart';
 import '../providers/auth_settings_providers.dart';
 import '../screens/lock_screen.dart';
 
+/// Duración mínima del splash cuando hay app-lock. Da tiempo a que
+/// plugins nativos (Geolocator, Firebase, etc.) se enganchen al
+/// `Activity` antes de que el contenido real se monte y dispare sus
+/// efectos de arranque (p. ej. `LocationBootstrap`).
+const Duration _kSplashMinDuration = Duration(seconds: 2);
+
 /// Envuelve la app con el gate de app-lock.
 ///
-/// - `loaded == false` → splash mínimo (evita parpadeo de lock).
-/// - `appLockEnabled == false` → deja pasar directo.
+/// - `loaded == false` → splash mínimo.
+/// - `appLockEnabled == false` → deja pasar directo (sin splash
+///   forzado).
 /// - `appLockEnabled == true` y `appUnlocked == false` → LockScreen.
 /// - `appLockEnabled == true` y `appUnlocked == true` → deja pasar,
 ///   con re-bloqueo tras `appLockTimeout` si se configuró.
@@ -27,10 +34,22 @@ class _AuthGateState extends ConsumerState<AuthGate>
     with WidgetsBindingObserver {
   DateTime? _backgroundedAt;
 
+  /// `true` cuando ya pasó [_kSplashMinDuration] desde el primer
+  /// frame. Solo relevante si hay app-lock.
+  bool _splashElapsed = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Arranca el timer del splash mínimo en el primer frame. No
+    // bloquea; solo marca un flag.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(_kSplashMinDuration, () {
+        if (mounted) setState(() => _splashElapsed = true);
+      });
+    });
   }
 
   @override
@@ -67,15 +86,26 @@ class _AuthGateState extends ConsumerState<AuthGate>
     }
   }
 
+  /// `true` si hay que mostrar el splash para no exponer el
+  /// contenido real antes de tiempo.
+  bool _mustShowSplash(AppAuthSettings auth) {
+    if (!auth.loaded) return true;
+    // Con app-lock activo, forzamos un mínimo de splash para que
+    // plugins nativos terminen de inicializar antes de montar el
+    // árbol completo.
+    if (auth.appLockEnabled && !_splashElapsed) return true;
+    return false;
+  }
+
   String _contentKey(AppAuthSettings auth, AuthSession session) {
-    if (!auth.loaded) return 'splash';
+    if (_mustShowSplash(auth)) return 'splash';
     if (!auth.appLockEnabled) return 'app';
     if (!session.appUnlocked) return 'lock';
     return 'app';
   }
 
   Widget _contentFor(AppAuthSettings auth, AuthSession session) {
-    if (!auth.loaded) return const _AuthSplash();
+    if (_mustShowSplash(auth)) return const _AuthSplash();
     if (!auth.appLockEnabled) return widget.child;
     if (!session.appUnlocked) return const LockScreen();
     return widget.child;
@@ -114,8 +144,7 @@ class _AuthGateState extends ConsumerState<AuthGate>
 }
 
 /// Splash de arranque: corazón M3E con latido orgánico sobre un
-/// gradiente radial. No es una pantalla completa: es el estado
-/// "esperando prefs" para evitar parpadeos antes de decidir el gate.
+/// gradiente radial.
 class _AuthSplash extends StatefulWidget {
   const _AuthSplash();
 
@@ -137,7 +166,6 @@ class _AuthSplashState extends State<_AuthSplash>
       duration: const Duration(milliseconds: 1600),
     );
 
-    // Ritmo de doble latido (Sístole - Relajación - Sístole - Diástole).
     _heartbeat = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 1.0, end: 1.12)
@@ -165,7 +193,6 @@ class _AuthSplashState extends State<_AuthSplash>
       ),
     ]).animate(_controller);
 
-    // El texto aparece suavemente después de que el corazón late.
     _textFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -190,7 +217,6 @@ class _AuthSplashState extends State<_AuthSplash>
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
-          // Gradiente radial sutil para dar profundidad atmosférica.
           gradient: RadialGradient(
             center: Alignment.center,
             radius: 0.8,
@@ -204,7 +230,6 @@ class _AuthSplashState extends State<_AuthSplash>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Corazón con latido
               ScaleTransition(
                 scale: _heartbeat,
                 child: Container(
@@ -234,7 +259,6 @@ class _AuthSplashState extends State<_AuthSplash>
                 ),
               ),
               const SizedBox(height: 32),
-              // Texto de marca con Fade-In
               FadeTransition(
                 opacity: _textFade,
                 child: Text(
