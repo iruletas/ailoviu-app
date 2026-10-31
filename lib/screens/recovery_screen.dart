@@ -9,9 +9,9 @@ import '../models/sync_models.dart';
 import '../providers/recovery_providers.dart';
 import '../providers/sync_providers.dart';
 import '../services/invite_service.dart';
+import '../widgets/qr_scanner_screen.dart';
 import '../widgets/settings_components.dart';
 import '../widgets/tonal_back_button.dart';
-import 'linking_screen.dart' show QrScannerScreen;
 
 /// Pantalla de recuperación de cuenta.
 class RecoveryScreen extends ConsumerStatefulWidget {
@@ -27,7 +27,7 @@ class _RecoveryScreenState extends ConsumerState<RecoveryScreen> {
 
   Future<void> _scan() async {
     final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+      MaterialPageRoute(builder: (_) => QrScannerScreen()),
     );
     if (scanned == null || !mounted) return;
 
