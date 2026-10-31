@@ -4,10 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/home_providers.dart';
 
 /// Dispara `refreshMyLocation()` al abrir la app y cada vez que
-/// vuelve del background (con throttle). Se monta una sola vez en
-/// `main_shell.dart`. El `AuthGate` garantiza que el árbol real
-/// (y por ende este widget) solo se monte después de un splash
-/// mínimo de 2s, dándole tiempo a `Geolocator` de engancharse.
+/// vuelve del background (con throttle).
 class LocationBootstrap extends ConsumerStatefulWidget {
   final Duration throttle;
 
