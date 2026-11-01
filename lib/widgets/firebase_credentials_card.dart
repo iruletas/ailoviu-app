@@ -8,7 +8,6 @@ import '../providers/sync_providers.dart';
 import '../services/transport_config.dart';
 import 'settings_components.dart';
 
-/// Card para pegar el `google-services.json` de Firebase.
 class FirebaseCredentialsCard extends ConsumerStatefulWidget {
   final VoidCallback onSaved;
   final bool initiallyConfigured;
@@ -36,6 +35,7 @@ class _FirebaseCredentialsCardState
   bool _copiedPackage = false;
 
   static const String _packageName = 'com.iruletas.ailoviu';
+  static const String _consoleUrl = 'console.firebase.google.com';
 
   @override
   void initState() {
@@ -75,14 +75,24 @@ class _FirebaseCredentialsCardState
     setState(() => _inlineError = null);
   }
 
-  Future<void> _copyPackageName() async {
+  Future<void> _copyToClipboard(String text, {required bool isPackage}) async {
     HapticFeedback.lightImpact();
-    await Clipboard.setData(const ClipboardData(text: _packageName));
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    setState(() => _copiedPackage = true);
-    Future<void>.delayed(const Duration(milliseconds: 1600), () {
-      if (mounted) setState(() => _copiedPackage = false);
-    });
+    
+    if (isPackage) {
+      setState(() => _copiedPackage = true);
+      Future<void>.delayed(const Duration(milliseconds: 1600), () {
+        if (mounted) setState(() => _copiedPackage = false);
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enlace copiado'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _save() async {
@@ -377,7 +387,7 @@ class _FirebaseCredentialsCardState
                 ),
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: _copyPackageName,
+                  onTap: () => _copyToClipboard(_packageName, isPackage: true),
                   child: AnimatedScale(
                     scale: _copiedPackage ? 0.9 : 1.0,
                     duration: const Duration(milliseconds: 200),
@@ -424,7 +434,8 @@ class _FirebaseCredentialsCardState
               setState(() => _expandedTutorial = !_expandedTutorial);
             },
             packageName: _packageName,
-            onCopyPackageName: _copyPackageName,
+            onCopyPackageName: () => _copyToClipboard(_packageName, isPackage: true),
+            onCopyConsoleUrl: () => _copyToClipboard(_consoleUrl, isPackage: false),
           ),
         ],
       ),
@@ -500,12 +511,14 @@ class _TutorialSection extends StatelessWidget {
   final VoidCallback onToggle;
   final String packageName;
   final VoidCallback onCopyPackageName;
+  final VoidCallback onCopyConsoleUrl;
 
   const _TutorialSection({
     required this.expanded,
     required this.onToggle,
     required this.packageName,
     required this.onCopyPackageName,
+    required this.onCopyConsoleUrl,
   });
 
   @override
@@ -576,69 +589,94 @@ class _TutorialSection extends StatelessWidget {
                         const SizedBox(height: 14),
                         _TutorialStep(
                           number: 1,
-                          title: 'Activa "Sitio de escritorio"',
+                          title: 'Entra a Firebase Console',
                           body:
-                              'En tu navegador, toca los 3 puntos ⋮ (o el '
-                              'menú) y activa "Sitio de escritorio". '
-                              'Firebase Console se ve incompleto desde el '
-                              'celular sin esto.',
+                              'Abre console.firebase.google.com en tu navegador.',
+                          trailing: _PackageCopyChip(
+                            label: 'Copiar link',
+                            onCopy: onCopyConsoleUrl,
+                          ),
                         ),
                         _TutorialStep(
                           number: 2,
-                          title: 'Crea el proyecto',
+                          title: 'Activa "Sitio de escritorio"',
                           body:
-                              'Abre console.firebase.google.com y crea un '
-                              'proyecto nuevo. Te preguntará por Gemini y '
-                              'Google Analytics. Puedes desactivar ambos o '
-                              'saltártelos, no los necesitas.',
+                              'En tu navegador, toca los 3 puntos ⋮ y activa '
+                              '"Sitio de escritorio". Firebase Console se ve '
+                              'incompleto desde el celular sin esto, así que '
+                              'asegúrate de hacerlo antes de crear el proyecto.',
                         ),
                         _TutorialStep(
                           number: 3,
-                          title: 'Crea la Realtime Database',
+                          title: 'Crea el proyecto',
                           body:
-                              'Menú ☰ → Compilación → Realtime Database → '
-                              'Crear base de datos. Elige la ubicación más '
-                              'cercana (us-central está bien) y selecciona '
-                              '"Comenzar en modo bloqueado".',
+                              'Toca "Para comenzar, configura un proyecto de '
+                              'Firebase". Ponle el nombre que quieras.',
                         ),
                         _TutorialStep(
                           number: 4,
-                          title: 'Activa la auth anónima',
+                          title: 'Gemini y Google Analytics',
                           body:
-                              'Menú ☰ → Compilación → Authentication → '
-                              'Comenzar → Anónimo → Habilitar. Sin esto, la '
-                              'app no puede escribir en Firebase.',
+                              'Te preguntará si quieres habilitar Gemini y '
+                              'Google Analytics. Desactiva ambos, no los '
+                              'necesitas.',
                         ),
                         _TutorialStep(
                           number: 5,
+                          title: 'Crea la Realtime Database',
+                          body:
+                              'Abre el menú desplegable con el icono > en la '
+                              'parte inferior izquierda > Bases de datos y '
+                              'almacenamiento > Realtime Database > Crear base '
+                              'de datos. Elige la ubicación más cercana y '
+                              'selecciona "Comenzar en modo bloqueado".',
+                        ),
+                        _TutorialStep(
+                          number: 6,
+                          title: 'Habilita la autenticación',
+                          body:
+                              'Abre el menú desplegable > > Seguridad > '
+                              'Authentication > Comenzar. En la lista de '
+                              'proveedores, selecciona "Anónimo" y actívalo.',
+                        ),
+                        _TutorialStep(
+                          number: 7,
                           title: 'Agrega una app Android',
                           body:
-                              'Menú ☰ → ⚙️ Configuración del proyecto → '
-                              'Tus apps → Agregar app → Android. El package '
-                              'name es el de abajo (cópialo). SHA-1 déjalo '
-                              'vacío.',
+                              'Abre el menú desplegable > > Descripción '
+                              'general del proyecto. Toca "Agregar app" y elige '
+                              'el ícono de Android. Pon el package name de aquí '
+                              'debajo y registra la app.',
                           trailing: _PackageCopyChip(
-                            packageName: packageName,
+                            label: packageName,
                             onCopy: onCopyPackageName,
                           ),
                         ),
                         _TutorialStep(
-                          number: 6,
+                          number: 8,
                           title: 'Descarga el archivo',
                           body:
-                              'Al registrar la app, Firebase te mostrará '
-                              'mucho código de Gradle. Ignóralo todo. Busca '
-                              'el botón "Descargar google-services.json" y '
-                              'tócalo. Se descarga al celular.',
+                              'En el paso 2 presiona "Descargar '
+                              'google-services.json" y luego presiona '
+                              '"Siguiente" ahí y en el paso 3, después "Ir a '
+                              'la consola".',
                         ),
                         _TutorialStep(
-                          number: 7,
-                          title: 'Copia su contenido',
+                          number: 9,
+                          title: 'Copia el contenido',
                           body:
-                              'Abre el archivo con cualquier editor de texto '
-                              '(Google Files, Notion, tu editor favorito). '
-                              'Selecciona todo y copia. Vuelve aquí y pega '
-                              'en el campo de arriba.',
+                              'Abre el archivo descargado, selecciona todo, '
+                              'copia y vuelve a la app para pegarlo en el '
+                              'campo y tocar "Validar y guardar".',
+                        ),
+                        _TutorialStep(
+                          number: 10,
+                          title: 'Pega las reglas',
+                          body:
+                              'En la app, vuelve a la pantalla anterior y '
+                              'copia las reglas. Luego ve a Firebase Console '
+                              '> Realtime Database > Reglas, borra lo que '
+                              'haya y pega las reglas. Toca "Publicar".',
                           isLast: true,
                         ),
                       ],
@@ -653,11 +691,11 @@ class _TutorialSection extends StatelessWidget {
 }
 
 class _PackageCopyChip extends StatefulWidget {
-  final String packageName;
+  final String label;
   final VoidCallback onCopy;
 
   const _PackageCopyChip({
-    required this.packageName,
+    required this.label,
     required this.onCopy,
   });
 
@@ -701,7 +739,7 @@ class _PackageCopyChipState extends State<_PackageCopyChip> {
               ),
               const SizedBox(width: 6),
               Text(
-                widget.packageName,
+                widget.label,
                 style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 11,
@@ -741,7 +779,6 @@ class _TutorialStep extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Columna del badge + línea de timeline.
           Column(
             children: [
               Container(
