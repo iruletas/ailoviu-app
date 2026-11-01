@@ -85,9 +85,27 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
                 'Estas reglas son las que impiden que nadie más entre a '
                 'tus datos. Solo tú y tu pareja tienen llave.',
           ),
+          const SizedBox(height: 12),
+          
+          // Instrucción dentro de la tarjeta
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              'En console.firebase.google.com abre el menú desplegable > > '
+              'Realtime Database > Reglas > borra el texto que tenga por '
+              'defecto y pega el contenido de aquí debajo.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurface,
+                height: 1.4,
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
 
-          // ── Code block tonal con barra tipo terminal ──────────────
           Container(
             decoration: BoxDecoration(
               color: codeBg,
@@ -95,7 +113,6 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
             ),
             child: Column(
               children: [
-                // Barra tipo terminal.
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -159,7 +176,6 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
                     ],
                   ),
                 ),
-                // Código.
                 Container(
                   width: double.infinity,
                   constraints: const BoxConstraints(maxHeight: 220),
@@ -190,7 +206,6 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
           ),
           const SizedBox(height: 14),
 
-          // ── Botón copiar con morph a tertiary ─────────────────────
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _rules == null ? null : _copyRules,
@@ -249,7 +264,6 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
           ),
           const SizedBox(height: 10),
 
-          // ── Botón Console tonal ───────────────────────────────────
           FilledButton.tonalIcon(
             onPressed: _openConsole,
             icon: const Icon(Icons.open_in_new_rounded, size: 16),
@@ -261,7 +275,6 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
           ),
           const SizedBox(height: 14),
 
-          // ── Instrucciones con icono en cápsula ────────────────────
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -288,9 +301,8 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'En Firebase Console, ve a Realtime Database → Reglas, '
-                    'pega el texto copiado y toca "Publicar". Sin esto, la '
-                    'app no puede escribir en Firebase.',
+                    'Después de publicar las reglas, toca "Probar conexión" '
+                    'en la app para verificar que todo funcione.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onTertiaryContainer,
                       height: 1.4,
