@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../providers/onboarding_providers.dart';
 import 'onboarding_scaffold.dart';
+import 'settings_components.dart';
 
 class OnboardingRoleStep extends StatefulWidget {
   final VoidCallback onHostSelected;
@@ -52,12 +53,12 @@ class _OnboardingRoleStepState extends State<OnboardingRoleStep>
 
     return OnboardingScaffold(
       step: OnboardingStep.role,
-      customStepNumber: 2, // Es el paso 2 (después de Bienvenida)
+      customStepNumber: 2, 
       showSkip: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
           
           Center(
             child: AnimatedBuilder(
@@ -101,20 +102,45 @@ class _OnboardingRoleStepState extends State<OnboardingRoleStep>
           ),
           const SizedBox(height: 12),
           Text(
-            'Para que ambos tengan el mismo espacio, solo uno necesita '
-            'configurar todo. El otro solo escanea un código.',
+            'Para que el espacio sea el mismo para todas las personas, '
+            'solo una necesita configurar todo. Quien no configure, '
+            'solo escaneará un código.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: scheme.onSurfaceVariant,
               height: 1.5,
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+
+          BentoCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const TonalMicroHeader(
+                  icon: Icons.rocket_launch_rounded,
+                  title: 'Vamos a configurar 4 cosas',
+                  description:
+                      'Toma unos 10 minutos. Puedes saltarte los pasos que '
+                      'quieras y hacerlos después desde Ajustes.',
+                ),
+                const SizedBox(height: 18),
+                _CheckBullet(text: 'Definir los nombres y la fecha de inicio'),
+                const SizedBox(height: 12),
+                _CheckBullet(text: 'Elegir el mapa para ver dónde están'),
+                const SizedBox(height: 12),
+                _CheckBullet(text: 'Conectar Firebase para que sea privado'),
+                const SizedBox(height: 12),
+                _CheckBullet(text: 'Mostrar el QR para vincular los dispositivos'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
 
           _RoleCard(
             icon: Icons.settings_suggest_rounded,
             title: 'Yo',
-            subtitle: 'Voy a configurar la relación, el mapa y Firebase.',
+            subtitle: 'Soy quien configura el espacio de la relación.',
             onTap: widget.onHostSelected,
             isPrimary: true,
             badgeText: 'Configuración completa',
@@ -122,13 +148,58 @@ class _OnboardingRoleStepState extends State<OnboardingRoleStep>
           const SizedBox(height: 16),
           _RoleCard(
             icon: Icons.qr_code_scanner_rounded,
-            title: 'Mi pareja',
-            subtitle: 'Solo voy a escanear el código que me muestre.',
+            title: 'Me invitaron',
+            subtitle: 'Solo escaneo el código para unirme.',
             onTap: widget.onGuestSelected,
             isPrimary: false,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CheckBullet extends StatelessWidget {
+  final String text;
+
+  const _CheckBullet({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.check_rounded,
+            size: 14,
+            color: scheme.onPrimaryContainer,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              text,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurface,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
