@@ -5,7 +5,7 @@ import 'package:m3e_shapes/m3e_shapes.dart';
 
 import '../providers/relationship_providers.dart';
 import '../widgets/auth_gate.dart';
-import '../widgets/main_shell_placeholder.dart';
+import 'main_shell.dart';
 
 /// Pantalla final del onboarding.
 ///
@@ -44,7 +44,6 @@ class _OnboardingWelcomeRelationshipScreenState
       duration: const Duration(milliseconds: 1400),
     );
 
-    // Corazón: escala elástica + morph de forma (cookie4 → heart).
     _heartScale = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 0.4, end: 1.12)
@@ -66,7 +65,6 @@ class _OnboardingWelcomeRelationshipScreenState
       curve: const Interval(0.05, 0.5, curve: Curves.easeOutCubic),
     );
 
-    // Cascada de contenido.
     _namesFade = CurvedAnimation(
       parent: _entrance,
       curve: const Interval(0.45, 0.70, curve: Curves.easeOut),
@@ -104,7 +102,7 @@ class _OnboardingWelcomeRelationshipScreenState
     HapticFeedback.mediumImpact();
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => const AuthGate(child: MainShellPlaceholder()),
+        builder: (_) => const AuthGate(child: MainShell()),
       ),
     );
   }
@@ -147,7 +145,6 @@ class _OnboardingWelcomeRelationshipScreenState
               children: [
                 const Spacer(),
 
-                // ── Corazón hero con morph + glow dual ────────────
                 AnimatedBuilder(
                   animation: Listenable.merge([
                     _heartScale,
@@ -156,7 +153,6 @@ class _OnboardingWelcomeRelationshipScreenState
                   ]),
                   builder: (context, child) {
                     final glowT = _glow.value;
-                    // Glow alterna primary ↔ tertiary.
                     final glowColor = Color.lerp(
                       scheme.primary,
                       scheme.tertiary,
@@ -198,7 +194,6 @@ class _OnboardingWelcomeRelationshipScreenState
                 ),
                 const SizedBox(height: 32),
 
-                // ── Título ────────────────────────────────────────
                 FadeTransition(
                   opacity: _namesFade,
                   child: Column(
@@ -212,8 +207,6 @@ class _OnboardingWelcomeRelationshipScreenState
                         ),
                       ),
                       const SizedBox(height: 16),
-
-                      // Píldoras tonales para los nombres.
                       if (names.isNotEmpty)
                         _NamesRow(names: names)
                       else
@@ -223,8 +216,6 @@ class _OnboardingWelcomeRelationshipScreenState
                             color: scheme.onSurfaceVariant,
                           ),
                         ),
-
-                      // Tipo de relación (misma geometría que DaysChip).
                       if (names.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         Container(
@@ -249,7 +240,6 @@ class _OnboardingWelcomeRelationshipScreenState
                   ),
                 ),
 
-                // ── Días juntos ───────────────────────────────────
                 if (rel.startDate != null)
                   FadeTransition(
                     opacity: _daysFade,
@@ -259,7 +249,6 @@ class _OnboardingWelcomeRelationshipScreenState
                     ),
                   ),
 
-                // ── Mensaje cálido ────────────────────────────────
                 const SizedBox(height: 28),
                 FadeTransition(
                   opacity: _messageFade,
@@ -278,7 +267,6 @@ class _OnboardingWelcomeRelationshipScreenState
 
                 const Spacer(),
 
-                // ── Botón con InkWell único ───────────────────────
                 FadeTransition(
                   opacity: _buttonFade,
                   child: AnimatedScale(
@@ -351,10 +339,6 @@ class _OnboardingWelcomeRelationshipScreenState
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// _NamesRow — píldoras tonales para cada integrante
-// ══════════════════════════════════════════════════════════════════════
-
 class _NamesRow extends StatelessWidget {
   final List<String> names;
 
@@ -413,10 +397,6 @@ class _NamesRow extends StatelessWidget {
     );
   }
 }
-
-// ══════════════════════════════════════════════════════════════════════
-// _DaysChip — geometría unificada a 16px
-// ══════════════════════════════════════════════════════════════════════
 
 class _DaysChip extends StatelessWidget {
   final DateTime startDate;
