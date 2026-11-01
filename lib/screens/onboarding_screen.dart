@@ -40,6 +40,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _rebuildSteps() {
     if (_isGuest) {
       _steps = [
+        OnboardingWelcomeStep(
+          onNext: _next,
+          onSkipAll: _finish,
+        ),
         OnboardingRoleStep(
           onHostSelected: _dummy,
           onGuestSelected: _dummy,
@@ -52,13 +56,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       ];
     } else {
       _steps = [
-        OnboardingRoleStep(
-          onHostSelected: _next,
-          onGuestSelected: _selectGuest,
-        ),
         OnboardingWelcomeStep(
           onNext: _next,
           onSkipAll: _finish,
+        ),
+        OnboardingRoleStep(
+          onHostSelected: _next,
+          onGuestSelected: _selectGuest,
         ),
         OnboardingRelationshipStep(
           onNext: _next,
@@ -90,9 +94,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     setState(() {
       _isGuest = true;
       _rebuildSteps();
-      _currentStep = 1;
+      // Salta directo al escáner (índice 2 en la nueva lista de invitado)
+      _currentStep = 2;
     });
-    _pageController.jumpToPage(1);
+    _pageController.jumpToPage(2);
     HapticFeedback.selectionClick();
   }
 
@@ -108,13 +113,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _next() => _goTo(_currentStep + 1);
 
   void _previous() {
-    if (_isGuest && _currentStep == 1) {
+    // Si el invitado intenta retroceder desde el escáner, reseteamos el flujo
+    if (_isGuest && _currentStep == 2) {
       setState(() {
         _isGuest = false;
         _rebuildSteps();
-        _currentStep = 0;
+        _currentStep = 1; // Vuelve al paso 2 (Rol)
       });
-      _pageController.jumpToPage(0);
+      _pageController.jumpToPage(1);
       HapticFeedback.selectionClick();
       return;
     }
