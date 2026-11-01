@@ -42,8 +42,8 @@ class _ShapeSelectorCardState extends State<ShapeSelectorCard> {
   }
 
   void _handleTap() {
-    HapticFeedback.mediumImpact();
-    widget.onTap();
+  HapticFeedback.selectionClick();
+  widget.onTap();
   }
 
   @override
