@@ -12,6 +12,10 @@
       }
     },
     "invites": {
+      "_ping": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
       "$inviteToken": {
         ".read": "auth != null",
         ".write": "auth != null",
