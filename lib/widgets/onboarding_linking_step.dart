@@ -16,8 +16,6 @@ import 'qr_scanner_screen.dart';
 import 'settings_components.dart';
 import 'waiting_approval_screen.dart';
 
-enum _LinkRole { host, guest }
-
 class OnboardingLinkingStep extends ConsumerStatefulWidget {
   /// Si es `true`, salta la selección de rol y va directo al escáner.
   final bool isGuestFlow;
@@ -39,20 +37,11 @@ class OnboardingLinkingStep extends ConsumerStatefulWidget {
 class _OnboardingLinkingStepState
     extends ConsumerState<OnboardingLinkingStep> {
   GroupInvitePayload? _invite;
-  _LinkRole? _role;
   bool _busy = false;
   String? _error;
 
   static const _suggestedQuestion =
       '¿Cómo se llamaba nuestra primera mascota?';
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.isGuestFlow) {
-      _role = _LinkRole.guest;
-    }
-  }
 
   Future<void> _createGroup() async {
     if (_busy) return;
@@ -115,7 +104,6 @@ class _OnboardingLinkingStepState
     try {
       final invite = GroupInvitePayload.fromQrString(scanned);
       
-      // Pedimos nombre y pregunta de recuperación
       final profile = await showModalBottomSheet<({String name, String question, String answer})>(
         context: context,
         isScrollControlled: true,
@@ -305,42 +293,30 @@ class _OnboardingLinkingStepState
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final hasInvite = _invite != null;
+    final isGuest = widget.isGuestFlow;
 
+    // La etiqueta del botón principal ya no depende de un selector de rol
     String primaryLabel;
     VoidCallback onPrimary;
     bool showPrimary = true;
 
-    if (_invite != null) {
+    if (hasInvite) {
       primaryLabel = 'Terminar';
       onPrimary = widget.onFinish;
-    } else if (_role == null) {
-      primaryLabel = '';
-      onPrimary = () {};
-      showPrimary = false;
-    } else if (_role == _LinkRole.host) {
-      primaryLabel = 'Crear grupo y mostrar QR';
-      onPrimary = _createGroup;
-    } else {
+    } else if (isGuest) {
       primaryLabel = 'Escanear QR';
       onPrimary = _joinGroup;
+    } else {
+      primaryLabel = 'Crear grupo y mostrar QR';
+      onPrimary = _createGroup;
     }
-
-    // Si es el flujo de invitado directo, no mostramos la pantalla de "quién eres"
-    // ni la explicación del host, solo el botón de escanear.
-    final showRoleSelector = !widget.isGuestFlow && _role == null;
 
     return OnboardingScaffold(
       step: OnboardingStep.linking,
       showSkip: false,
       bottomAction: showPrimary
           ? _BottomNav(
-              onBack: () {
-                if (_role != null && _invite == null && !widget.isGuestFlow) {
-                  setState(() => _role = null);
-                } else {
-                  widget.onBack();
-                }
-              },
+              onBack: widget.onBack,
               primaryLabel: primaryLabel,
               onPrimary: onPrimary,
               busy: _busy,
@@ -351,7 +327,7 @@ class _OnboardingLinkingStepState
         children: [
           const SizedBox(height: 8),
           Text(
-            showRoleSelector ? '¿Quién eres?' : _title(rel),
+            isGuest ? 'Unirse a la relación' : _title(rel),
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
               letterSpacing: -0.4,
@@ -359,8 +335,8 @@ class _OnboardingLinkingStepState
           ),
           const SizedBox(height: 6),
           Text(
-            showRoleSelector
-                ? 'Para vincular los celulares, uno crea el grupo y el otro se une.'
+            isGuest 
+                ? 'Pídele a tu pareja que abra Ailoviu y te muestre el código QR desde su pantalla.'
                 : 'Cuando abran Ailoviu en su celular, verán el mismo espacio que tú.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: scheme.onSurfaceVariant,
@@ -369,55 +345,33 @@ class _OnboardingLinkingStepState
           ),
           const SizedBox(height: 24),
 
-          if (showRoleSelector) ...[
-            _RoleCard(
-              icon: Icons.phone_android_rounded,
-              title: 'Soy el anfitrión',
-              subtitle: 'Crearé el grupo y mostraré el QR para que se unan.',
-              onTap: () {
-                HapticFeedback.mediumImpact();
-                setState(() => _role = _LinkRole.host);
-              },
-            ),
-            const SizedBox(height: 16),
-            _RoleCard(
-              icon: Icons.qr_code_scanner_rounded,
-              title: 'Soy el invitado',
-              subtitle: 'Escanearé el QR que me muestre mi pareja.',
-              onTap: () {
-                HapticFeedback.mediumImpact();
-                setState(() => _role = _LinkRole.guest);
-              },
-            ),
-          ] else ...[
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 420),
-              switchInCurve: Curves.fastOutSlowIn,
-              switchOutCurve: Curves.fastOutSlowIn,
-              transitionBuilder: (child, animation) {
-                final curved = CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.fastOutSlowIn,
-                );
-                return FadeTransition(
-                  opacity: curved,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.94, end: 1.0)
-                        .animate(curved),
-                    child: child,
-                  ),
-                );
-              },
-              child: hasInvite
-                  ? _QrFrame(
-                      key: const ValueKey('qr'),
-                      invite: _invite!,
-                    )
-                  : (_role == _LinkRole.host 
-                      ? const _ExplanationCard(key: ValueKey('explanation'))
-                      : const _GuestExplanationCard(key: ValueKey('guest_expl'))),
-            ),
-          ],
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 420),
+            switchInCurve: Curves.fastOutSlowIn,
+            switchOutCurve: Curves.fastOutSlowIn,
+            transitionBuilder: (child, animation) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.fastOutSlowIn,
+              );
+              return FadeTransition(
+                opacity: curved,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.94, end: 1.0)
+                      .animate(curved),
+                  child: child,
+                ),
+              );
+            },
+            child: hasInvite
+                ? _QrFrame(
+                    key: const ValueKey('qr'),
+                    invite: _invite!,
+                  )
+                : (isGuest 
+                    ? const _GuestExplanationCard(key: ValueKey('guest_expl'))
+                    : const _ExplanationCard(key: ValueKey('explanation'))),
+          ),
 
           if (_error != null) ...[
             const SizedBox(height: 16),
@@ -465,9 +419,6 @@ class _OnboardingLinkingStepState
   }
 
   String _title(AppRelationship rel) {
-    if (_role == _LinkRole.guest) {
-      return 'Unirse a la relación';
-    }
     if (rel.type == RelationshipType.polyamorous) {
       return 'Prepara todo para tus parejas';
     }
@@ -478,64 +429,7 @@ class _OnboardingLinkingStepState
   }
 }
 
-class _RoleCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _RoleCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(icon, color: scheme.onPrimaryContainer),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+// ── Tarjeta de Explicación (Invitado) ──────────────────────────────────
 class _GuestExplanationCard extends StatelessWidget {
   const _GuestExplanationCard({super.key});
 
@@ -587,59 +481,7 @@ class _GuestExplanationCard extends StatelessWidget {
   }
 }
 
-class _QrFrame extends StatefulWidget {
-  final GroupInvitePayload invite;
-  const _QrFrame({super.key, required this.invite});
-
-  @override
-  State<_QrFrame> createState() => _QrFrameState();
-}
-
-class _QrFrameState extends State<_QrFrame>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _glow;
-
-  @override
-  void initState() {
-    super.initState();
-    _glow = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _glow.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AnimatedBuilder(
-      animation: _glow,
-      builder: (context, child) {
-        final t = _glow.value;
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.15 + t * 0.18),
-                blurRadius: 20 + t * 14,
-                spreadRadius: 1 + t * 3,
-              ),
-            ],
-          ),
-          child: child,
-        );
-      },
-      child: QrInviteCard(invite: widget.invite),
-    );
-  }
-}
-
+// ── Tarjeta de Explicación (Anfitrión) ─────────────────────────────────
 class _ExplanationCard extends StatelessWidget {
   const _ExplanationCard({super.key});
 
@@ -798,6 +640,59 @@ class _StaggeredBullet extends StatelessWidget {
   }
 }
 
+class _QrFrame extends StatefulWidget {
+  final GroupInvitePayload invite;
+  const _QrFrame({super.key, required this.invite});
+
+  @override
+  State<_QrFrame> createState() => _QrFrameState();
+}
+
+class _QrFrameState extends State<_QrFrame>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _glow = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _glow.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _glow,
+      builder: (context, child) {
+        final t = _glow.value;
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(32),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.primary.withValues(alpha: 0.15 + t * 0.18),
+                blurRadius: 20 + t * 14,
+                spreadRadius: 1 + t * 3,
+              ),
+            ],
+          ),
+          child: child,
+        );
+      },
+      child: QrInviteCard(invite: widget.invite),
+    );
+  }
+}
+
 class _GroupFormSheet extends StatefulWidget {
   final bool isGuest;
   final String initialName;
@@ -931,6 +826,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
               label: 'Respuesta',
               hint: 'Algo que recuerdes bien',
               controller: _answerCtrl,
+              // Sin restricciones de caracteres, acepta todo
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 20),
