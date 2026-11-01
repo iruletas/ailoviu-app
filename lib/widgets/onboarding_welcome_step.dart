@@ -8,13 +8,6 @@ import 'onboarding_scaffold.dart';
 import 'settings_components.dart';
 
 /// Paso 1: Bienvenida y enmarque emocional.
-///
-/// No configura nada. Solo explica qué va a pasar y por qué vale la
-/// pena la fricción de los pasos 2-4.
-///
-/// Lee `relationshipProvider` para adaptar el copy si el usuario ya
-/// tenía datos configurados de antes (raro, pero pasa si repite el
-/// onboarding desde Ajustes).
 class OnboardingWelcomeStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onSkipAll;
@@ -43,7 +36,6 @@ class _OnboardingWelcomeStepState
   void initState() {
     super.initState();
 
-    // Entrada del corazón: overshoot elástico.
     _entranceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -61,7 +53,6 @@ class _OnboardingWelcomeStepState
       ),
     ]).animate(_entranceController);
 
-    // Glow respirando continuamente.
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
@@ -187,7 +178,6 @@ class _OnboardingWelcomeStepState
         children: [
           const SizedBox(height: 12),
 
-          // ── Corazón hero con rebote + glow pulsante ───────────────
           Center(
             child: AnimatedBuilder(
               animation: Listenable.merge([
@@ -248,7 +238,6 @@ class _OnboardingWelcomeStepState
           ),
           const SizedBox(height: 32),
 
-          // ── Card: qué vamos a hacer ───────────────────────────────
           BentoCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,7 +246,7 @@ class _OnboardingWelcomeStepState
                   icon: Icons.rocket_launch_rounded,
                   title: 'Vamos a configurar 4 cosas',
                   description:
-                      'Toma 3 minutos. Puedes saltarte los pasos que '
+                      'Toma unos 10 minutos. Puedes saltarte los pasos que '
                       'quieras y hacerlos después desde Ajustes.',
                 ),
                 const SizedBox(height: 18),
@@ -296,7 +285,6 @@ class _OnboardingWelcomeStepState
           ),
           const SizedBox(height: 20),
 
-          // ── Card: por qué vale la pena (sin borde) ────────────────
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -351,7 +339,6 @@ class _OnboardingWelcomeStepState
           ),
           const SizedBox(height: 32),
 
-          // ── CTA principal con compresión física ───────────────────
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (_) {
@@ -389,7 +376,6 @@ class _OnboardingWelcomeStepState
           ),
           const SizedBox(height: 12),
 
-          // ── Saltar todo ───────────────────────────────────────────
           TextButton(
             onPressed: () {
               HapticFeedback.lightImpact();
@@ -406,7 +392,6 @@ class _OnboardingWelcomeStepState
     );
   }
 
-  /// Copy del paso 1, adaptado al tipo de relación si ya hay datos.
   static String _partnerCopy(AppRelationship rel) {
     final names = rel.visibleNames
         .map((n) => n.trim())
@@ -432,9 +417,6 @@ class _OnboardingWelcomeStepState
   }
 }
 
-/// Fila de la lista de "qué vamos a configurar", con:
-/// - Cápsula numerada tonal (1-4) en vez de ícono suelto.
-/// - Aparición escalonada (delay según [index]).
 class _StaggeredStepBullet extends StatelessWidget {
   final int index;
   final int number;
@@ -458,9 +440,6 @@ class _StaggeredStepBullet extends StatelessWidget {
       duration: Duration(milliseconds: 420 + index * 80),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) {
-        // El delay se simula mapeando `value` con un offset por índice.
-        // Con `duration` creciente por índice, el efecto global es una
-        // cascada de 80 ms entre filas.
         final delayedValue =
             ((value - index * 0.08) / (1 - index * 0.08)).clamp(0.0, 1.0);
         final opacity = delayedValue;
