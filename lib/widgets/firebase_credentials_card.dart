@@ -24,11 +24,13 @@ class FirebaseCredentialsCard extends ConsumerStatefulWidget {
   });
 
   @override
+  // Aquí ya llamamos a la clase pública
   ConsumerState<FirebaseCredentialsCard> createState() =>
-      _FirebaseCredentialsCardState();
+      FirebaseCredentialsCardState();
 }
 
-class _FirebaseCredentialsCardState
+// Clase pública (sin guion bajo) para poder usar GlobalKey desde fuera
+class FirebaseCredentialsCardState
     extends ConsumerState<FirebaseCredentialsCard> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
@@ -124,6 +126,7 @@ class _FirebaseCredentialsCardState
     }
   }
 
+  // Método público para que el padre (la barra inferior) lo llame
   Future<void> validateAndSave() async {
     if (_busy) return;
     final raw = _controller.text.trim();
