@@ -38,16 +38,33 @@ class _OnboardingFirebaseStepState
   bool _hadConfigOnEntry = false;
   bool _testPassed = false;
 
+  // Clave para acceder al método de validación de la tarjeta
+  final _credentialsKey = GlobalKey<FirebaseCredentialsCardState>();
+  final _scrollController = ScrollController();
+
+  // Estado para saber si la tarjeta de credenciales tiene texto
+  bool _hasCredentialsText = false;
+  bool _isSavingCredentials = false;
+
   @override
   void initState() {
     super.initState();
     _checkInitialState();
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _checkInitialState() async {
     final raw = await ref.read(keyStoreProvider).getTransportConfig();
     if (!mounted) return;
-    setState(() => _hadConfigOnEntry = raw != null);
+    setState(() {
+      _hadConfigOnEntry = raw != null;
+      _hasCredentialsText = raw != null;
+    });
   }
 
   void _goTo(_FirebaseSubStep step) {
@@ -58,9 +75,50 @@ class _OnboardingFirebaseStepState
       _subStep = step;
       if (step != _FirebaseSubStep.test) _testPassed = false;
     });
+    // Hacemos scroll al inicio al cambiar de sub-paso
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
-  void _onCredentialsSaved() => _goTo(_FirebaseSubStep.rules);
+  void _onCredentialsSaved() {
+    setState(() => _isSavingCredentials = false);
+    _goTo(_FirebaseSubStep.rules);
+  }
+
+  Future<void> _handlePrimaryAction() async {
+    if (_subStep == _FirebaseSubStep.credentials) {
+      if (!_hasCredentialsText) {
+        // Si está vacío, hace scroll hacia el campo de texto para que pegue
+        HapticFeedback.lightImpact();
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+          );
+        }
+        return;
+      }
+      
+      // Si tiene texto, valida y guarda
+      setState(() => _isSavingCredentials = true);
+      _credentialsKey.currentState?.validateAndSave();
+      // Nota: el setState a false y el avance a _goTo se hace en _onCredentialsSaved
+      
+    } else if (_subStep == _FirebaseSubStep.rules) {
+      _goTo(_FirebaseSubStep.test);
+    } else if (_subStep == _FirebaseSubStep.test) {
+      if (_testPassed) {
+        HapticFeedback.mediumImpact();
+        widget.onNext();
+      }
+    }
+  }
 
   Future<void> _confirmSkipWithWarning() async {
     final confirmed = await showGeneralDialog<bool>(
@@ -71,7 +129,10 @@ class _OnboardingFirebaseStepState
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (_, __, ___) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: _SkipWarningDialog(onConfirm: () => Navigator.pop(context, true), onCancel: () => Navigator.pop(context, false)),
+        child: _SkipWarningDialog(
+          onConfirm: () => Navigator.pop(context, true),
+          onCancel: () => Navigator.pop(context, false),
+        ),
       ),
       transitionBuilder: (_, animation, __, child) {
         final curved = CurvedAnimation(
@@ -92,12 +153,6 @@ class _OnboardingFirebaseStepState
     if (confirmed == true) widget.onSkip();
   }
 
-  void _continue() {
-    if (!_testPassed) return;
-    HapticFeedback.mediumImpact();
-    widget.onNext();
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -107,92 +162,98 @@ class _OnboardingFirebaseStepState
       step: OnboardingStep.firebase,
       onSkip: _confirmSkipWithWarning,
       bottomAction: _buildBottomBar(scheme, theme),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 8),
-          
-          // ── Hero Header (Icono de fuego en squircle) ──────────────
-          Center(
-            child: Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(32),
-                boxShadow: [
-                  BoxShadow(
-                    color: scheme.primary.withValues(alpha: 0.25),
-                    blurRadius: 24,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.local_fire_department_rounded,
-                size: 44,
-                color: scheme.onPrimaryContainer,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          Text(
-            'Firebase',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.4,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Este paso es el más técnico, pero también el más importante: '
-            'aquí es donde Ailoviu se vuelve un espacio privado de verdad. '
-            'Lo que se manden viaja cifrado; ni siquiera el servidor que '
-            'lo transporta puede leerlo.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          _SubStepIndicator(
-            current: _subStep,
-            onTap: (step) {
-              final canGoBack = step.index < _subStep.index;
-              if (canGoBack) _goTo(step);
-            },
-          ),
-          const SizedBox(height: 20),
-
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 450),
-            switchInCurve: Curves.easeInOutCubicEmphasized,
-            switchOutCurve: Curves.easeInOutCubicEmphasized,
-            transitionBuilder: (child, animation) {
-              final curved = CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeInOutCubicEmphasized,
-              );
-              return FadeTransition(
-                opacity: curved,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: Offset(0.06 * _direction, 0),
-                    end: Offset.zero,
-                  ).animate(curved),
-                  child: child,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 8),
+            
+            Center(
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(32),
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.primary.withValues(alpha: 0.25),
+                      blurRadius: 24,
+                      spreadRadius: 2,
+                    ),
+                  ],
                 ),
-              );
-            },
-            child: _buildSubStep(),
-          ),
+                child: Icon(
+                  Icons.local_fire_department_rounded,
+                  size: 44,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
 
-          const SizedBox(height: 8),
-        ],
+            Text(
+              'Firebase',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Este paso es el más técnico, pero también el más importante: '
+              'aquí es donde Ailoviu se vuelve un espacio privado de verdad. '
+              'Lo que se manden viaja cifrado; ni siquiera el servidor que '
+              'lo transporta puede leerlo.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            _SubStepIndicator(
+              current: _subStep,
+              onTap: (step) {
+                final canGoBack = step.index < _subStep.index;
+                if (canGoBack) _goTo(step);
+              },
+            ),
+            const SizedBox(height: 20),
+
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 450),
+              switchInCurve: Curves.easeInOutCubicEmphasized,
+              switchOutCurve: Curves.easeInOutCubicEmphasized,
+              transitionBuilder: (child, animation) {
+                final curved = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOutCubicEmphasized,
+                );
+                return FadeTransition(
+                  opacity: curved,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: Offset(0.06 * _direction, 0),
+                      end: Offset.zero,
+                    ).animate(curved),
+                    child: child,
+                  ),
+                );
+              },
+              child: _buildSubStep(),
+            ),
+
+            const SizedBox(height: 32),
+          ],
+        ),
       ),
     );
   }
@@ -219,8 +280,14 @@ class _OnboardingFirebaseStepState
             const SizedBox(height: 16),
             
             FirebaseCredentialsCard(
+              key: _credentialsKey,
               initiallyConfigured: _hadConfigOnEntry,
               onSaved: _onCredentialsSaved,
+              onStateChanged: (hasText) {
+                if (_hasCredentialsText != hasText) {
+                  setState(() => _hasCredentialsText = hasText);
+                }
+              },
             ),
           ],
         );
@@ -267,24 +334,30 @@ class _OnboardingFirebaseStepState
 
   Widget _buildBottomBar(ColorScheme scheme, ThemeData theme) {
     final isLastSubStep = _subStep == _FirebaseSubStep.test;
-    final canContinue = !isLastSubStep || _testPassed;
+    
+    // Etiqueta e icono dinámicos
+    String label;
+    IconData icon;
+    bool canContinue = true;
 
-    final String label;
     if (_subStep == _FirebaseSubStep.credentials) {
-      label = _hadConfigOnEntry ? 'Reconfigurar' : 'Empieza pegando el archivo';
+      if (!_hasCredentialsText) {
+        label = 'Empieza pegando el archivo';
+        icon = Icons.arrow_upward_rounded;
+        canContinue = true; // Habilitado para hacer scroll
+      } else {
+        label = 'Validar y guardar';
+        icon = Icons.check_rounded;
+        canContinue = !_isSavingCredentials;
+      }
     } else if (_subStep == _FirebaseSubStep.rules) {
       label = 'Ya publiqué las reglas';
+      icon = Icons.arrow_forward_rounded;
     } else {
       label = _testPassed ? 'Continuar' : 'Falta pasar el test';
+      icon = _testPassed ? Icons.check_rounded : Icons.lock_outline_rounded;
+      canContinue = _testPassed;
     }
-
-    final onPrimaryTap = canContinue
-        ? (_subStep == _FirebaseSubStep.credentials
-            ? null
-            : (_subStep == _FirebaseSubStep.rules
-                ? () => _goTo(_FirebaseSubStep.test)
-                : _continue))
-        : null;
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -321,69 +394,63 @@ class _OnboardingFirebaseStepState
             ),
           ),
           const SizedBox(width: 8),
-          
-          // Botón principal simplificado (sin GestureDetector extra)
           Expanded(
-            child: AnimatedScale(
-              scale: canContinue ? 1.0 : 0.98, // Efecto sutil
-              duration: const Duration(milliseconds: 200),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOutCubic,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: canContinue
-                      ? scheme.primary
-                      : scheme.surfaceContainerHighest,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              height: 48,
+              decoration: BoxDecoration(
+                color: canContinue
+                    ? scheme.primary
+                    : scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(24),
+                child: InkWell(
+                  onTap: canContinue ? _handlePrimaryAction : null,
                   borderRadius: BorderRadius.circular(24),
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(24),
-                  child: InkWell(
-                    onTap: onPrimaryTap,
-                    borderRadius: BorderRadius.circular(24),
-                    child: Center(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 220),
-                            switchInCurve: Curves.easeOutBack,
-                            transitionBuilder: (child, animation) =>
-                                ScaleTransition(
-                              scale: animation,
-                              child: child,
-                            ),
-                            child: Icon(
-                              _subStep == _FirebaseSubStep.rules
-                                  ? Icons.arrow_forward_rounded
-                                  : (_subStep == _FirebaseSubStep.test
-                                      ? (_testPassed
-                                          ? Icons.check_rounded
-                                          : Icons.lock_outline_rounded)
-                                      : Icons.vpn_key_rounded),
-                              key: ValueKey(
-                                '${_subStep.index}-${_testPassed}',
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutBack,
+                      transitionBuilder: (child, animation) =>
+                          ScaleTransition(scale: animation, child: child),
+                      child: _isSavingCredentials
+                          ? SizedBox(
+                              key: const ValueKey('busy'),
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                strokeCap: StrokeCap.round,
+                                color: scheme.onPrimary,
                               ),
-                              size: 20,
-                              color: canContinue
-                                  ? scheme.onPrimary
-                                  : scheme.onSurfaceVariant,
+                            )
+                          : Row(
+                              key: ValueKey('$label-$canContinue'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  icon,
+                                  size: 20,
+                                  color: canContinue
+                                      ? scheme.onPrimary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  label,
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: canContinue
+                                        ? scheme.onPrimary
+                                        : scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            label,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: canContinue
-                                  ? scheme.onPrimary
-                                  : scheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ),
@@ -396,7 +463,7 @@ class _OnboardingFirebaseStepState
   }
 }
 
-// ── Diálogo con Glassmorphism ──────────────────────────────────────────
+// ── Diálogo de Advertencia ───────────────────────────────────────────
 class _SkipWarningDialog extends StatelessWidget {
   final VoidCallback onConfirm;
   final VoidCallback onCancel;
@@ -415,7 +482,7 @@ class _SkipWarningDialog extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 420),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow.withValues(alpha: 0.9), // Fondo semitransparente
+              color: scheme.surfaceContainerLow.withValues(alpha: 0.9),
               borderRadius: BorderRadius.circular(36),
               border: Border.all(
                 color: scheme.outlineVariant.withValues(alpha: 0.3),
@@ -508,7 +575,7 @@ class _SkipWarningDialog extends StatelessWidget {
   }
 }
 
-// ── Indicador de Sub-pasos Morfosis ───────────────────────────────────
+// ── Indicador de Sub-pasos ───────────────────────────────────────────
 class _SubStepIndicator extends StatelessWidget {
   final _FirebaseSubStep current;
   final ValueChanged<_FirebaseSubStep> onTap;
@@ -587,7 +654,6 @@ class _SubStepChipState extends State<_SubStepChip> {
             ? scheme.onPrimaryContainer
             : scheme.onSurfaceVariant);
 
-    // Morfosis de radio
     final radius = widget.isActive ? 16.0 : 12.0;
 
     return GestureDetector(
@@ -626,7 +692,7 @@ class _SubStepChipState extends State<_SubStepChip> {
                       spreadRadius: 1,
                     )
                   ]
-                : null, // Resplandor sutil solo en activo
+                : null,
           ),
           child: Center(
             child: AnimatedSwitcher(
