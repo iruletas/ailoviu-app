@@ -12,15 +12,21 @@ import '../services/invite_service.dart';
 import '../services/linking_service.dart';
 import 'onboarding_scaffold.dart';
 import 'qr_invite_card.dart';
+import 'qr_scanner_screen.dart';
 import 'settings_components.dart';
+import 'waiting_approval_screen.dart';
 
-/// Paso 5: vinculación.
+enum _LinkRole { host, guest }
+
 class OnboardingLinkingStep extends ConsumerStatefulWidget {
+  /// Si es `true`, salta la selección de rol y va directo al escáner.
+  final bool isGuestFlow;
   final VoidCallback onFinish;
   final VoidCallback onBack;
 
   const OnboardingLinkingStep({
     super.key,
+    this.isGuestFlow = false,
     required this.onFinish,
     required this.onBack,
   });
@@ -33,11 +39,20 @@ class OnboardingLinkingStep extends ConsumerStatefulWidget {
 class _OnboardingLinkingStepState
     extends ConsumerState<OnboardingLinkingStep> {
   GroupInvitePayload? _invite;
+  _LinkRole? _role;
   bool _busy = false;
   String? _error;
 
   static const _suggestedQuestion =
       '¿Cómo se llamaba nuestra primera mascota?';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isGuestFlow) {
+      _role = _LinkRole.guest;
+    }
+  }
 
   Future<void> _createGroup() async {
     if (_busy) return;
@@ -82,6 +97,89 @@ class _OnboardingLinkingStepState
     }
   }
 
+  Future<void> _joinGroup() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    final scanned = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+    );
+    if (scanned == null || !mounted) {
+      setState(() => _busy = false);
+      return;
+    }
+
+    try {
+      final invite = GroupInvitePayload.fromQrString(scanned);
+      
+      // Pedimos nombre y pregunta de recuperación
+      final profile = await showModalBottomSheet<({String name, String question, String answer})>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: _GroupFormSheet(
+            isGuest: true,
+            initialName: '',
+            suggestedQuestion: _suggestedQuestion,
+          ),
+        ),
+      );
+      
+      if (profile == null || !mounted) {
+        setState(() => _busy = false);
+        return;
+      }
+
+      final linking = ref.read(linkingServiceProvider);
+      final prepared = await linking.prepareJoin(
+        invite: invite,
+        displayName: profile.name,
+      );
+
+      final sync = await ref.read(syncServiceProvider.future);
+      final published = await sync.publishInvite(
+        inviteToken: prepared.inviteToken,
+        request: prepared.request,
+      );
+
+      if (!mounted) return;
+      setState(() => _busy = false);
+
+      if (!published) {
+        setState(() => _error = 'No se pudo avisar al host. Revisa tu conexión.');
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const WaitingApprovalScreen()),
+      );
+      
+      if (mounted) widget.onFinish();
+    } on InviteException catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = e.message;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = 'Error: $e';
+        });
+      }
+    }
+  }
+
   Future<({String name, String question, String answer})?> _askGroupForm(
     String initialName,
   ) {
@@ -95,6 +193,7 @@ class _OnboardingLinkingStepState
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: _GroupFormSheet(
+          isGuest: false,
           initialName: initialName,
           suggestedQuestion: _suggestedQuestion,
         ),
@@ -207,21 +306,52 @@ class _OnboardingLinkingStepState
     final theme = Theme.of(context);
     final hasInvite = _invite != null;
 
+    String primaryLabel;
+    VoidCallback onPrimary;
+    bool showPrimary = true;
+
+    if (_invite != null) {
+      primaryLabel = 'Terminar';
+      onPrimary = widget.onFinish;
+    } else if (_role == null) {
+      primaryLabel = '';
+      onPrimary = () {};
+      showPrimary = false;
+    } else if (_role == _LinkRole.host) {
+      primaryLabel = 'Crear grupo y mostrar QR';
+      onPrimary = _createGroup;
+    } else {
+      primaryLabel = 'Escanear QR';
+      onPrimary = _joinGroup;
+    }
+
+    // Si es el flujo de invitado directo, no mostramos la pantalla de "quién eres"
+    // ni la explicación del host, solo el botón de escanear.
+    final showRoleSelector = !widget.isGuestFlow && _role == null;
+
     return OnboardingScaffold(
       step: OnboardingStep.linking,
       showSkip: false,
-      bottomAction: _BottomNav(
-        onBack: widget.onBack,
-        primaryLabel: hasInvite ? 'Terminar' : 'Crear grupo y mostrar QR',
-        onPrimary: hasInvite ? widget.onFinish : _createGroup,
-        busy: _busy,
-      ),
+      bottomAction: showPrimary
+          ? _BottomNav(
+              onBack: () {
+                if (_role != null && _invite == null && !widget.isGuestFlow) {
+                  setState(() => _role = null);
+                } else {
+                  widget.onBack();
+                }
+              },
+              primaryLabel: primaryLabel,
+              onPrimary: onPrimary,
+              busy: _busy,
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 8),
           Text(
-            _title(rel),
+            showRoleSelector ? '¿Quién eres?' : _title(rel),
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
               letterSpacing: -0.4,
@@ -229,40 +359,65 @@ class _OnboardingLinkingStepState
           ),
           const SizedBox(height: 6),
           Text(
-            'Cuando abran Ailoviu en su celular, verán el mismo espacio '
-            'que tú, con los datos cifrados y sincronizados.',
+            showRoleSelector
+                ? 'Para vincular los celulares, uno crea el grupo y el otro se une.'
+                : 'Cuando abran Ailoviu en su celular, verán el mismo espacio que tú.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: scheme.onSurfaceVariant,
               height: 1.4,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
 
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 420),
-            switchInCurve: Curves.fastOutSlowIn,
-            switchOutCurve: Curves.fastOutSlowIn,
-            transitionBuilder: (child, animation) {
-              final curved = CurvedAnimation(
-                parent: animation,
-                curve: Curves.fastOutSlowIn,
-              );
-              return FadeTransition(
-                opacity: curved,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.94, end: 1.0)
-                      .animate(curved),
-                  child: child,
-                ),
-              );
-            },
-            child: hasInvite
-                ? _QrFrame(
-                    key: const ValueKey('qr'),
-                    invite: _invite!,
-                  )
-                : const _ExplanationCard(key: ValueKey('explanation')),
-          ),
+          if (showRoleSelector) ...[
+            _RoleCard(
+              icon: Icons.phone_android_rounded,
+              title: 'Soy el anfitrión',
+              subtitle: 'Crearé el grupo y mostraré el QR para que se unan.',
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                setState(() => _role = _LinkRole.host);
+              },
+            ),
+            const SizedBox(height: 16),
+            _RoleCard(
+              icon: Icons.qr_code_scanner_rounded,
+              title: 'Soy el invitado',
+              subtitle: 'Escanearé el QR que me muestre mi pareja.',
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                setState(() => _role = _LinkRole.guest);
+              },
+            ),
+          ] else ...[
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 420),
+              switchInCurve: Curves.fastOutSlowIn,
+              switchOutCurve: Curves.fastOutSlowIn,
+              transitionBuilder: (child, animation) {
+                final curved = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.fastOutSlowIn,
+                );
+                return FadeTransition(
+                  opacity: curved,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.94, end: 1.0)
+                        .animate(curved),
+                    child: child,
+                  ),
+                );
+              },
+              child: hasInvite
+                  ? _QrFrame(
+                      key: const ValueKey('qr'),
+                      invite: _invite!,
+                    )
+                  : (_role == _LinkRole.host 
+                      ? const _ExplanationCard(key: ValueKey('explanation'))
+                      : const _GuestExplanationCard(key: ValueKey('guest_expl'))),
+            ),
+          ],
 
           if (_error != null) ...[
             const SizedBox(height: 16),
@@ -310,6 +465,9 @@ class _OnboardingLinkingStepState
   }
 
   String _title(AppRelationship rel) {
+    if (_role == _LinkRole.guest) {
+      return 'Unirse a la relación';
+    }
     if (rel.type == RelationshipType.polyamorous) {
       return 'Prepara todo para tus parejas';
     }
@@ -320,9 +478,114 @@ class _OnboardingLinkingStepState
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// _QrFrame — QrInviteCard con marco tonal + glow
-// ══════════════════════════════════════════════════════════════════════
+class _RoleCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _RoleCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: scheme.onPrimaryContainer),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GuestExplanationCard extends StatelessWidget {
+  const _GuestExplanationCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return BentoCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const TonalMicroHeader(
+            icon: Icons.qr_code_scanner_rounded,
+            title: 'Escanear el código',
+            description:
+                'Pídele a tu pareja que abra Ailoviu y te muestre el código QR '
+                'desde su pantalla.',
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.tertiaryContainer,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: scheme.onTertiaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Asegúrate de tener la cámara lista. El código caduca a los 10 minutos.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onTertiaryContainer,
+                          fontWeight: FontWeight.w600,
+                          height: 1.4,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _QrFrame extends StatefulWidget {
   final GroupInvitePayload invite;
@@ -376,10 +639,6 @@ class _QrFrameState extends State<_QrFrame>
     );
   }
 }
-
-// ══════════════════════════════════════════════════════════════════════
-// _ExplanationCard — qué pasa si crea el grupo (bullets escalonados)
-// ══════════════════════════════════════════════════════════════════════
 
 class _ExplanationCard extends StatelessWidget {
   const _ExplanationCard({super.key});
@@ -539,15 +798,13 @@ class _StaggeredBullet extends StatelessWidget {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// _GroupFormSheet — nombre + pregunta + respuesta
-// ══════════════════════════════════════════════════════════════════════
-
 class _GroupFormSheet extends StatefulWidget {
+  final bool isGuest;
   final String initialName;
   final String suggestedQuestion;
 
   const _GroupFormSheet({
+    required this.isGuest,
     required this.initialName,
     required this.suggestedQuestion,
   });
@@ -624,7 +881,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Icon(
-                    Icons.group_add_rounded,
+                    widget.isGuest ? Icons.badge_rounded : Icons.group_add_rounded,
                     size: 24,
                     color: scheme.onPrimaryContainer,
                   ),
@@ -635,7 +892,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Crear grupo',
+                        widget.isGuest ? 'Tus datos' : 'Crear grupo',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -697,7 +954,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
                       minimumSize: const Size.fromHeight(48),
                       shape: const StadiumBorder(),
                     ),
-                    child: const Text('Crear'),
+                    child: Text(widget.isGuest ? 'Unirse' : 'Crear'),
                   ),
                 ),
               ],
@@ -788,10 +1045,6 @@ class _SheetFieldState extends State<_SheetField> {
     );
   }
 }
-
-// ══════════════════════════════════════════════════════════════════════
-// _BottomNav — Spring Scale + solo InkWell
-// ══════════════════════════════════════════════════════════════════════
 
 class _BottomNav extends StatefulWidget {
   final VoidCallback onBack;
