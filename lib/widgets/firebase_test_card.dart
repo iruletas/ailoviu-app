@@ -9,7 +9,12 @@ import 'settings_components.dart';
 /// Prueba la conexión de punta a punta con Firebase y muestra el
 /// resultado con mensaje accionable + detalle técnico colapsable.
 class FirebaseTestCard extends ConsumerStatefulWidget {
-  const FirebaseTestCard({super.key});
+  final ValueChanged<bool> onResult;
+
+  const FirebaseTestCard({
+    super.key,
+    required this.onResult,
+  });
 
   @override
   ConsumerState<FirebaseTestCard> createState() => _FirebaseTestCardState();
@@ -45,6 +50,9 @@ class _FirebaseTestCardState extends ConsumerState<FirebaseTestCard> {
       _busy = false;
       _report = report;
     });
+
+    // Avisamos al paso 4 si el test pasó o falló
+    widget.onResult(report.isSuccess);
   }
 
   @override
@@ -66,7 +74,6 @@ class _FirebaseTestCardState extends ConsumerState<FirebaseTestCard> {
           ),
           const SizedBox(height: 16),
 
-          // ── Botón: GestureDetector solo, Material+InkWell dentro ──
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: _busy
@@ -144,7 +151,6 @@ class _FirebaseTestCardState extends ConsumerState<FirebaseTestCard> {
             ),
           ),
 
-          // ── Resultado ─────────────────────────────────────────────
           AnimatedSize(
             duration: const Duration(milliseconds: 320),
             curve: Curves.easeOutCubic,
@@ -199,7 +205,6 @@ class _ResultBanner extends StatelessWidget {
         ? Icons.check_circle_rounded
         : _iconForResult(report.result);
 
-    // Entrada con overshoot (brote desde el botón).
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 380),
@@ -215,14 +220,12 @@ class _ResultBanner extends StatelessWidget {
           color: bg,
           borderRadius: BorderRadius.circular(20),
         ),
-        // ClipRRect para que la barra de acento respete el radio.
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Barra lateral de acento.
                 Container(width: 4, color: accent),
                 Expanded(
                   child: Padding(
@@ -233,7 +236,6 @@ class _ResultBanner extends StatelessWidget {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Squircle tonal 14px.
                             Container(
                               width: 32,
                               height: 32,
@@ -274,13 +276,11 @@ class _ResultBanner extends StatelessWidget {
                         ),
                         if (report.technicalDetail != null) ...[
                           const SizedBox(height: 12),
-                          // Chip tonal para el toggle.
                           _DetailChip(
                             expanded: showTechnicalDetail,
                             onTap: onToggleDetail,
                             fg: fg,
                           ),
-                          // Detalle: AnimatedSize + FadeTransition.
                           AnimatedSize(
                             duration: const Duration(milliseconds: 240),
                             curve: Curves.easeOutCubic,
@@ -331,7 +331,6 @@ class _ResultBanner extends StatelessWidget {
   }
 }
 
-/// Chip tonal para expandir/colapsar el detalle técnico.
 class _DetailChip extends StatelessWidget {
   final bool expanded;
   final VoidCallback onTap;
@@ -390,8 +389,6 @@ class _DetailChip extends StatelessWidget {
   }
 }
 
-/// Consola de log técnica: micro-etiqueta del tipo de error + bloque
-/// monoespaciado sobre `surfaceContainerLowest`.
 class _TechnicalConsole extends StatelessWidget {
   final String detail;
   final FirebaseTestResult result;
@@ -406,7 +403,6 @@ class _TechnicalConsole extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
@@ -423,7 +419,6 @@ class _TechnicalConsole extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Micro-etiqueta del tipo de error.
             Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: 6,
