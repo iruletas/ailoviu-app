@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../providers/onboarding_providers.dart';
 
+/// Chrome común del onboarding.
 class OnboardingScaffold extends StatelessWidget {
   final OnboardingStep step;
   final bool showSkip;
@@ -34,7 +35,7 @@ class OnboardingScaffold extends StatelessWidget {
     final theme = Theme.of(context);
 
     // Si no nos pasan un número custom, calculamos el estándar.
-    // role = 1, welcome = 2, relationship = 3, map = 4, firebase = 5, linking = 6
+    // welcome=1, role=2, relationship=3, map=4, firebase=5, linking=6
     final currentStep = customStepNumber ?? (step.position + 1);
     final totalSteps = customTotalSteps ?? 6;
 
