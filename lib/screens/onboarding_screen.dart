@@ -40,7 +40,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _rebuildSteps() {
     if (_isGuest) {
       _steps = [
-        // Quitamos el const aquí porque los callbacks no son constantes
         OnboardingRoleStep(
           onHostSelected: _dummy,
           onGuestSelected: _dummy,
@@ -134,88 +133,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return PopScope(
       canPop: _currentStep == 0,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _previous();
       },
-      child: Scaffold(
-        backgroundColor: scheme.surface,
-        body: Stack(
-          children: [
-            PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              onPageChanged: (i) {
-                setState(() => _currentStep = i);
-                HapticFeedback.selectionClick();
-              },
-              children: _steps,
-            ),
-            
-            SafeArea(
-              bottom: false,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: _StepIndicator(
-                    current: _currentStep,
-                    total: _steps.length,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StepIndicator extends StatelessWidget {
-  final int current;
-  final int total;
-
-  const _StepIndicator({
-    required this.current,
-    required this.total,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (int i = 0; i < total; i++) ...[
-            if (i > 0) const SizedBox(width: 6),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              width: i == current ? 18 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: i == current
-                    ? scheme.primary
-                    : scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ],
-        ],
+      child: PageView(
+        controller: _pageController,
+        physics: const NeverScrollableScrollPhysics(),
+        onPageChanged: (i) {
+          setState(() => _currentStep = i);
+          HapticFeedback.selectionClick();
+        },
+        children: _steps,
       ),
     );
   }
