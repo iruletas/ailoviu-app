@@ -7,7 +7,7 @@ import '../widgets/onboarding_linking_step.dart';
 import '../widgets/onboarding_map_step.dart';
 import '../widgets/onboarding_relationship_step.dart';
 import '../widgets/onboarding_welcome_step.dart';
-import 'onboarding_done_screen.dart';
+import 'onboarding_welcome_relationship_screen.dart';
 
 /// Pantalla que orquesta el onboarding de 5 pasos.
 ///
@@ -45,7 +45,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       index,
       duration: const Duration(milliseconds: 380),
       // `fastOutSlowIn` es la curva estándar de M3 para transiciones de
-      // pantalla completa. Se percibe más "con peso" que easeInOutCubic.
+      // pantalla completa.
       curve: Curves.fastOutSlowIn,
     );
   }
@@ -58,7 +58,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     await ref.read(onboardingProvider.notifier).complete();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const OnboardingDoneScreen()),
+      MaterialPageRoute(
+        builder: (_) => const OnboardingWelcomeRelationshipScreen(),
+      ),
     );
   }
 
