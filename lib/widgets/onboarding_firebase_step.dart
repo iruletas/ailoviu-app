@@ -38,10 +38,8 @@ class _OnboardingFirebaseStepState
   bool _hadConfigOnEntry = false;
   bool _testPassed = false;
 
-  // Clave para acceder al método de validación de la tarjeta
   final _credentialsKey = GlobalKey<FirebaseCredentialsCardState>();
-  final _scrollController = ScrollController();
-
+  
   // Estado para saber si la tarjeta de credenciales tiene texto
   bool _hasCredentialsText = false;
   bool _isSavingCredentials = false;
@@ -50,12 +48,6 @@ class _OnboardingFirebaseStepState
   void initState() {
     super.initState();
     _checkInitialState();
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
   }
 
   Future<void> _checkInitialState() async {
@@ -75,14 +67,6 @@ class _OnboardingFirebaseStepState
       _subStep = step;
       if (step != _FirebaseSubStep.test) _testPassed = false;
     });
-    // Hacemos scroll al inicio al cambiar de sub-paso
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-      );
-    }
   }
 
   void _onCredentialsSaved() {
@@ -93,22 +77,11 @@ class _OnboardingFirebaseStepState
   Future<void> _handlePrimaryAction() async {
     if (_subStep == _FirebaseSubStep.credentials) {
       if (!_hasCredentialsText) {
-        // Si está vacío, hace scroll hacia el campo de texto para que pegue
-        HapticFeedback.lightImpact();
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeOutCubic,
-          );
-        }
+        // Si está vacío, no hace nada (el botón está deshabilitado en apariencia)
         return;
       }
-      
-      // Si tiene texto, valida y guarda
       setState(() => _isSavingCredentials = true);
       _credentialsKey.currentState?.validateAndSave();
-      // Nota: el setState a false y el avance a _goTo se hace en _onCredentialsSaved
       
     } else if (_subStep == _FirebaseSubStep.rules) {
       _goTo(_FirebaseSubStep.test);
@@ -163,7 +136,8 @@ class _OnboardingFirebaseStepState
       onSkip: _confirmSkipWithWarning,
       bottomAction: _buildBottomBar(scheme, theme),
       child: SingleChildScrollView(
-        controller: _scrollController,
+        // Key para mantener el scroll estable
+        key: const PageStorageKey('firebase_scroll'),
         physics: const BouncingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),
@@ -342,9 +316,9 @@ class _OnboardingFirebaseStepState
 
     if (_subStep == _FirebaseSubStep.credentials) {
       if (!_hasCredentialsText) {
-        label = 'Empieza pegando el archivo';
+        label = 'Pega el archivo arriba';
         icon = Icons.arrow_upward_rounded;
-        canContinue = true; // Habilitado para hacer scroll
+        canContinue = false; // Deshabilitado si no hay texto
       } else {
         label = 'Validar y guardar';
         icon = Icons.check_rounded;
