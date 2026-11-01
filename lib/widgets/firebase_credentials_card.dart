@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/sync_providers.dart';
 import '../services/transport_config.dart';
@@ -11,11 +12,15 @@ import 'settings_components.dart';
 class FirebaseCredentialsCard extends ConsumerStatefulWidget {
   final VoidCallback onSaved;
   final bool initiallyConfigured;
+  
+  /// Callback para notificar al padre si hay texto en el campo.
+  final ValueChanged<bool>? onStateChanged;
 
   const FirebaseCredentialsCard({
     super.key,
     required this.onSaved,
     this.initiallyConfigured = false,
+    this.onStateChanged,
   });
 
   @override
@@ -32,10 +37,13 @@ class _FirebaseCredentialsCardState
   bool _busy = false;
   String? _inlineError;
   bool _expandedTutorial = false;
-  bool _copiedPackage = false;
+
+  // Estados para el feedback de copiado
+  bool _copiedPackageMain = false;
+  bool _copiedPackageTutorial = false;
 
   static const String _packageName = 'com.iruletas.ailoviu';
-  static const String _consoleUrl = 'console.firebase.google.com';
+  static const String _consoleUrl = 'https://console.firebase.google.com';
 
   @override
   void initState() {
@@ -49,9 +57,9 @@ class _FirebaseCredentialsCardState
   Future<void> _preloadExisting() async {
     final raw = await ref.read(keyStoreProvider).getTransportConfig();
     if (!mounted || raw == null) return;
-    setState(() {
-      _controller.text = const JsonEncoder.withIndent('  ').convert(raw);
-    });
+    final jsonStr = const JsonEncoder.withIndent('  ').convert(raw);
+    _controller.text = jsonStr;
+    widget.onStateChanged?.call(jsonStr.isNotEmpty);
   }
 
   @override
@@ -61,41 +69,62 @@ class _FirebaseCredentialsCardState
     super.dispose();
   }
 
+  void _onTextChanged() {
+    setState(() => _inlineError = null);
+    widget.onStateChanged?.call(_controller.text.trim().isNotEmpty);
+  }
+
   Future<void> _paste() async {
     HapticFeedback.lightImpact();
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (data?.text == null) return;
     _controller.text = data!.text!;
-    setState(() => _inlineError = null);
+    _onTextChanged();
   }
 
   void _clear() {
     HapticFeedback.lightImpact();
     _controller.clear();
-    setState(() => _inlineError = null);
+    _onTextChanged();
   }
 
-  Future<void> _copyToClipboard(String text, {required bool isPackage}) async {
+  Future<void> _copyPackageName({required bool isTutorial}) async {
     HapticFeedback.lightImpact();
-    await Clipboard.setData(ClipboardData(text: text));
+    await Clipboard.setData(const ClipboardData(text: _packageName));
     if (!mounted) return;
     
-    if (isPackage) {
-      setState(() => _copiedPackage = true);
-      Future<void>.delayed(const Duration(milliseconds: 1600), () {
-        if (mounted) setState(() => _copiedPackage = false);
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enlace copiado'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    setState(() {
+      if (isTutorial) {
+        _copiedPackageTutorial = true;
+      } else {
+        _copiedPackageMain = true;
+      }
+    });
+
+    Future<void>.delayed(const Duration(milliseconds: 1600), () {
+      if (mounted) {
+        setState(() {
+          if (isTutorial) {
+            _copiedPackageTutorial = false;
+          } else {
+            _copiedPackageMain = false;
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _openConsole() async {
+    HapticFeedback.lightImpact();
+    final uri = Uri.parse(_consoleUrl);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        setState(() => _inlineError = 'No se pudo abrir el navegador.');
+      }
     }
   }
 
-  Future<void> _save() async {
+  Future<void> validateAndSave() async {
     if (_busy) return;
     final raw = _controller.text.trim();
     if (raw.isEmpty) {
@@ -186,7 +215,7 @@ class _FirebaseCredentialsCardState
                     border: InputBorder.none,
                     isDense: true,
                   ),
-                  onChanged: (_) => setState(() => _inlineError = null),
+                  onChanged: (_) => _onTextChanged(),
                 ),
                 const SizedBox(height: 4),
                 AnimatedSwitcher(
@@ -275,68 +304,6 @@ class _FirebaseCredentialsCardState
           ),
           const SizedBox(height: 16),
 
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _busy ? null : _save,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 240),
-              curve: Curves.easeOutCubic,
-              height: 48,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(24),
-                child: InkWell(
-                  onTap: _busy ? null : _save,
-                  borderRadius: BorderRadius.circular(24),
-                  child: Center(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 240),
-                      switchInCurve: Curves.easeOutBack,
-                      transitionBuilder: (child, animation) =>
-                          ScaleTransition(scale: animation, child: child),
-                      child: _busy
-                          ? SizedBox(
-                              key: const ValueKey('busy'),
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                strokeCap: StrokeCap.round,
-                                color: scheme.onPrimary,
-                              ),
-                            )
-                          : Row(
-                              key: const ValueKey('label'),
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check_rounded,
-                                  size: 18,
-                                  color: scheme.onPrimary,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Validar y guardar',
-                                  style: theme.textTheme.labelLarge
-                                      ?.copyWith(
-                                    color: scheme.onPrimary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -387,15 +354,15 @@ class _FirebaseCredentialsCardState
                 ),
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () => _copyToClipboard(_packageName, isPackage: true),
+                  onTap: () => _copyPackageName(isTutorial: false),
                   child: AnimatedScale(
-                    scale: _copiedPackage ? 0.9 : 1.0,
+                    scale: _copiedPackageMain ? 0.9 : 1.0,
                     duration: const Duration(milliseconds: 200),
                     curve: Curves.easeOutBack,
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: _copiedPackage
+                        color: _copiedPackageMain
                             ? scheme.primaryContainer
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
@@ -409,12 +376,12 @@ class _FirebaseCredentialsCardState
                           child: child,
                         ),
                         child: Icon(
-                          _copiedPackage
+                          _copiedPackageMain
                               ? Icons.check_rounded
                               : Icons.copy_rounded,
-                          key: ValueKey(_copiedPackage),
+                          key: ValueKey(_copiedPackageMain),
                           size: 16,
-                          color: _copiedPackage
+                          color: _copiedPackageMain
                               ? scheme.onPrimaryContainer
                               : scheme.onTertiaryContainer,
                         ),
@@ -434,8 +401,9 @@ class _FirebaseCredentialsCardState
               setState(() => _expandedTutorial = !_expandedTutorial);
             },
             packageName: _packageName,
-            onCopyPackageName: () => _copyToClipboard(_packageName, isPackage: true),
-            onCopyConsoleUrl: () => _copyToClipboard(_consoleUrl, isPackage: false),
+            copiedPackageTutorial: _copiedPackageTutorial,
+            onCopyPackageName: () => _copyPackageName(isTutorial: true),
+            onOpenConsole: _openConsole,
           ),
         ],
       ),
@@ -510,15 +478,17 @@ class _TutorialSection extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggle;
   final String packageName;
+  final bool copiedPackageTutorial;
   final VoidCallback onCopyPackageName;
-  final VoidCallback onCopyConsoleUrl;
+  final VoidCallback onOpenConsole;
 
   const _TutorialSection({
     required this.expanded,
     required this.onToggle,
     required this.packageName,
+    required this.copiedPackageTutorial,
     required this.onCopyPackageName,
-    required this.onCopyConsoleUrl,
+    required this.onOpenConsole,
   });
 
   @override
@@ -593,8 +563,9 @@ class _TutorialSection extends StatelessWidget {
                           body:
                               'Abre console.firebase.google.com en tu navegador.',
                           trailing: _PackageCopyChip(
-                            label: 'Copiar link',
-                            onCopy: onCopyConsoleUrl,
+                            label: 'Abrir en navegador',
+                            icon: Icons.open_in_new_rounded,
+                            onCopy: onOpenConsole,
                           ),
                         ),
                         _TutorialStep(
@@ -626,8 +597,8 @@ class _TutorialSection extends StatelessWidget {
                           title: 'Crea la Realtime Database',
                           body:
                               'Abre el menú desplegable con el icono > en la '
-                              'parte inferior izquierda > Bases de datos y '
-                              'almacenamiento > Realtime Database > Crear base '
+                              'parte inferior izquierda ➞ Bases de datos y '
+                              'almacenamiento ➞ Realtime Database ➞ Crear base '
                               'de datos. Elige la ubicación más cercana y '
                               'selecciona "Comenzar en modo bloqueado".',
                         ),
@@ -635,21 +606,25 @@ class _TutorialSection extends StatelessWidget {
                           number: 6,
                           title: 'Habilita la autenticación',
                           body:
-                              'Abre el menú desplegable > > Seguridad > '
-                              'Authentication > Comenzar. En la lista de '
+                              'Abre el menú desplegable ➞ Seguridad ➞ '
+                              'Authentication ➞ Comenzar. En la lista de '
                               'proveedores, selecciona "Anónimo" y actívalo.',
                         ),
                         _TutorialStep(
                           number: 7,
                           title: 'Agrega una app Android',
                           body:
-                              'Abre el menú desplegable > > Descripción '
+                              'Abre el menú desplegable ➞ Descripción '
                               'general del proyecto. Toca "Agregar app" y elige '
                               'el ícono de Android. Pon el package name de aquí '
                               'debajo y registra la app.',
                           trailing: _PackageCopyChip(
                             label: packageName,
+                            icon: copiedPackageTutorial
+                                ? Icons.check_rounded
+                                : Icons.copy_rounded,
                             onCopy: onCopyPackageName,
+                            isSuccess: copiedPackageTutorial,
                           ),
                         ),
                         _TutorialStep(
@@ -667,16 +642,7 @@ class _TutorialSection extends StatelessWidget {
                           body:
                               'Abre el archivo descargado, selecciona todo, '
                               'copia y vuelve a la app para pegarlo en el '
-                              'campo y tocar "Validar y guardar".',
-                        ),
-                        _TutorialStep(
-                          number: 10,
-                          title: 'Pega las reglas',
-                          body:
-                              'En la app, vuelve a la pantalla anterior y '
-                              'copia las reglas. Luego ve a Firebase Console '
-                              '> Realtime Database > Reglas, borra lo que '
-                              'haya y pega las reglas. Toca "Publicar".',
+                              'campo.',
                           isLast: true,
                         ),
                       ],
@@ -692,11 +658,15 @@ class _TutorialSection extends StatelessWidget {
 
 class _PackageCopyChip extends StatefulWidget {
   final String label;
+  final IconData icon;
   final VoidCallback onCopy;
+  final bool isSuccess;
 
   const _PackageCopyChip({
     required this.label,
+    required this.icon,
     required this.onCopy,
+    this.isSuccess = false,
   });
 
   @override
@@ -720,22 +690,23 @@ class _PackageCopyChipState extends State<_PackageCopyChip> {
         scale: _pressed ? 0.94 : 1.0,
         duration: const Duration(milliseconds: 140),
         curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(
             horizontal: 10,
             vertical: 6,
           ),
           decoration: BoxDecoration(
-            color: scheme.primaryContainer,
+            color: widget.isSuccess ? scheme.tertiaryContainer : scheme.primaryContainer,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.copy_rounded,
+                widget.icon,
                 size: 12,
-                color: scheme.onPrimaryContainer,
+                color: widget.isSuccess ? scheme.onTertiaryContainer : scheme.onPrimaryContainer,
               ),
               const SizedBox(width: 6),
               Text(
@@ -744,7 +715,7 @@ class _PackageCopyChipState extends State<_PackageCopyChip> {
                   fontFamily: 'monospace',
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: scheme.onPrimaryContainer,
+                  color: widget.isSuccess ? scheme.onTertiaryContainer : scheme.onPrimaryContainer,
                 ),
               ),
             ],
