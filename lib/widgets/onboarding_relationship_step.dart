@@ -516,7 +516,7 @@ class _DateCard extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// _BottomNav — superficie flotante (no pegada al borde inferior)
+// _BottomNav — superficie flotante con morphing implícito del primario
 // ══════════════════════════════════════════════════════════════════════
 
 class _BottomNav extends StatelessWidget {
@@ -535,6 +535,17 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    final bg = primaryIsSecondaryStyle
+        ? scheme.surfaceContainerHighest
+        : scheme.primary;
+    final fg = primaryIsSecondaryStyle
+        ? scheme.onSurface
+        : scheme.onPrimary;
+    final borderColor = primaryIsSecondaryStyle
+        ? scheme.outlineVariant.withValues(alpha: 0.4)
+        : Colors.transparent;
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -568,30 +579,53 @@ class _BottomNav extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: primaryIsSecondaryStyle
-                ? OutlinedButton.icon(
-                    onPressed: onPrimary,
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 20),
-                    label: Text(primaryLabel),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      shape: const StadiumBorder(),
-                      backgroundColor: scheme.surfaceContainerHighest,
-                      foregroundColor: scheme.onSurface,
-                      side: BorderSide(
-                        color: scheme.outlineVariant.withValues(alpha: 0.4),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onPrimary,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: borderColor,
+                    width: 1,
+                  ),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(24),
+                  child: InkWell(
+                    onTap: onPrimary,
+                    borderRadius: BorderRadius.circular(24),
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 20,
+                            color: fg,
+                          ),
+                          const SizedBox(width: 8),
+                          AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeOutCubic,
+                            style: theme.textTheme.labelLarge!.copyWith(
+                              color: fg,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            child: Text(primaryLabel),
+                          ),
+                        ],
                       ),
                     ),
-                  )
-                : FilledButton.icon(
-                    onPressed: onPrimary,
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 20),
-                    label: Text(primaryLabel),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      shape: const StadiumBorder(),
-                    ),
                   ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
