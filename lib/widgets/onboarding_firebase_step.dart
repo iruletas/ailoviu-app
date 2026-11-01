@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/onboarding_providers.dart';
 import '../providers/sync_providers.dart';
 import 'firebase_credentials_card.dart';
 import 'firebase_rules_card.dart';
