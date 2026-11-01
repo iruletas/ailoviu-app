@@ -80,7 +80,6 @@ class _OnboardingFirebaseStepState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Squircle tonal de advertencia.
                 Container(
                   width: 64,
                   height: 64,
@@ -213,7 +212,6 @@ class _OnboardingFirebaseStepState
           ),
           const SizedBox(height: 20),
 
-          // ── Contenido con SlideTransition direccional ─────────────
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 340),
             switchInCurve: Curves.fastOutSlowIn,
@@ -223,9 +221,6 @@ class _OnboardingFirebaseStepState
                 parent: animation,
                 curve: Curves.fastOutSlowIn,
               );
-              // El signo viene de _direction: 1 → entra por la derecha,
-              // -1 → entra por la izquierda. El hijo saliente también
-              // se mueve, pero AnimatedSwitcher lo maneja internamente.
               return FadeTransition(
                 opacity: curved,
                 child: SlideTransition(
@@ -274,7 +269,13 @@ class _OnboardingFirebaseStepState
           key: const ValueKey('test'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const FirebaseTestCard(),
+            FirebaseTestCard(
+              onResult: (passed) {
+                setState(() {
+                  _testPassed = passed;
+                });
+              },
+            ),
             if (!_testPassed) ...[
               const SizedBox(height: 16),
               const _NextStepHint(
@@ -351,7 +352,6 @@ class _OnboardingFirebaseStepState
               onTapDown: onPrimaryTap == null
                   ? null
                   : (_) {
-                      // Háptica graduada según el sub-paso.
                       if (_subStep == _FirebaseSubStep.rules) {
                         HapticFeedback.selectionClick();
                       } else if (_subStep == _FirebaseSubStep.test) {
@@ -508,8 +508,6 @@ class _SubStepChipState extends State<_SubStepChip> {
             ? scheme.onPrimaryContainer
             : scheme.onSurfaceVariant);
 
-    // Radio distinto según estado: activo = squircle 16, completado = 14,
-    // inactivo = 14.
     final radius = widget.isActive ? 16.0 : 14.0;
 
     return GestureDetector(
