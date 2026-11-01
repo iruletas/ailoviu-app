@@ -8,58 +8,21 @@ import 'key_store.dart';
 import 'transport_config.dart';
 
 /// Resultado de un intento de probar la conexión a Firebase.
-///
-/// Cada valor está pensado para que la UI muestre un mensaje accionable,
-/// no un "error" genérico. El enum define QUÉ falló; el `message` del
-/// resultado dice CÓMO arreglarlo.
 enum FirebaseTestResult {
-  /// Todo bien: config válida, auth anónima, reglas permiten leer y
-  /// escribir en el ping.
   success,
-
-  /// No hay `transport.config` guardado en Keystore. El usuario no ha
-  /// pegado el `google-services.json`.
   missingConfig,
-
-  /// El JSON que pegó no parsea o le faltan campos. Firebase rechazó
-  /// `initializeApp`.
   configError,
-
-  /// `initializeApp` ok, pero `signInAnonymously` falló. Lo más común:
-  /// el proveedor "Anónimo" no está habilitado en Firebase Console →
-  /// Authentication → Sign-in method.
   authError,
-
-  /// Escribir en `invites/_ping` falló con `permission_denied`. Las
-  /// reglas de Realtime Database no están publicadas o están mal.
   permissionDenied,
-
-  /// Escribir falló por timeout o error de red. Revisa la conexión a
-  /// internet del celular.
   networkError,
-
-  /// La escritura fue aceptada, pero leer de vuelta no devolvió el
-  /// valor. Muy raro: significa que las reglas permiten escribir pero
-  /// no leer.
   readBackError,
-
-  /// Cualquier otro error no clasificado. El `message` trae el detalle.
   unknown,
 }
 
-/// Resultado completo de un test, con mensaje humano y detalle técnico
-/// opcional para debug.
 class FirebaseTestReport {
   final FirebaseTestResult result;
-
-  /// Mensaje listo para mostrar en UI. Español, accionable, sin jerga.
   final String message;
-
-  /// Detalle técnico del error (stack, código). Solo para el log
-  /// interno o para un tooltip de debug. `null` si no aplica.
   final String? technicalDetail;
-
-  /// Cuándo se corrió el test.
   final DateTime testedAt;
 
   const FirebaseTestReport({
@@ -95,20 +58,6 @@ class FirebaseTestReport {
   }
 }
 
-/// Servicio que prueba la conexión a Firebase de punta a punta.
-///
-/// Flujo:
-/// 1. Lee `transport.config` de Keystore.
-/// 2. `Firebase.initializeApp` con esa config (si no estaba inicializado).
-/// 3. `signInAnonymously`.
-/// 4. Escribe en `invites/_ping/{deviceId}`.
-/// 5. Lee de vuelta el valor escrito.
-/// 6. Borra el ping.
-///
-/// Cada paso que falla devuelve un `FirebaseTestResult` distinto, con un
-/// mensaje que dice exactamente qué revisar en Firebase Console.
-///
-/// **No lanza excepciones.** Siempre devuelve un `FirebaseTestReport`.
 class FirebaseTestService {
   FirebaseTestService({required KeyStore keyStore}) : _keyStore = keyStore;
 
@@ -118,7 +67,6 @@ class FirebaseTestService {
   static const Duration _readTimeout = Duration(seconds: 10);
 
   Future<FirebaseTestReport> testConnection() async {
-    // ── 1. Config guardada ─────────────────────────────────────────
     final rawConfig = await _keyStore.getTransportConfig();
     if (rawConfig == null) {
       return FirebaseTestReport.fail(
@@ -152,7 +100,6 @@ class FirebaseTestService {
       );
     }
 
-    // ── 2. Inicializar Firebase ────────────────────────────────────
     final deviceId = await _keyStore.getDeviceId() ?? 'unknown';
     try {
       if (Firebase.apps.isEmpty) {
@@ -178,7 +125,6 @@ class FirebaseTestService {
       );
     }
 
-    // ── 3. Auth anónima ────────────────────────────────────────────
     try {
       final auth = FirebaseAuth.instance;
       if (auth.currentUser == null) {
@@ -214,15 +160,18 @@ class FirebaseTestService {
       );
     }
 
-    // ── 4. Escritura en el ping ────────────────────────────────────
     final db = FirebaseDatabase.instanceFor(
       app: Firebase.app(),
       databaseURL: config.databaseUrl,
     );
-    final pingRef = db.ref('invites/_ping/$deviceId');
+    
+    // Escribimos directo en invites/_ping y agregamos un 'requests' vacío
+    // para cumplir con la regla: newData.hasChild('requests').
+    final pingRef = db.ref('invites/_ping');
     final payload = {
       'ts': DateTime.now().millisecondsSinceEpoch,
       'probe': true,
+      'requests': <String, dynamic>{}, // Dummy para la regla de Firebase
     };
 
     try {
@@ -235,9 +184,6 @@ class FirebaseTestService {
             'a internet y vuelve a intentarlo.',
       );
     } on FirebaseException catch (e) {
-      // En Realtime Database los errores llegan como FirebaseException
-      // (de firebase_core). El código útil está en `e.code` o, si no,
-      // en el mensaje.
       final code = e.code ?? '';
       final detail = '$code: ${e.message ?? e.toString()}';
       final looksLikePermission = code.contains('permission-denied') ||
@@ -271,7 +217,6 @@ class FirebaseTestService {
       );
     }
 
-    // ── 5. Lectura de vuelta ──────────────────────────────────────
     try {
       final snapshot = await pingRef.get().timeout(_readTimeout);
       if (!snapshot.exists) {
@@ -300,10 +245,6 @@ class FirebaseTestService {
       );
     }
 
-    // ── 6. Limpieza del ping ──────────────────────────────────────
-    // No esperamos ni reportamos error si falla: es un ping, no un dato
-    // del usuario. Si por algo quedó huérfano, se limpia solo en la
-    // próxima prueba.
     unawaited(
       pingRef.remove().catchError((Object _) {}),
     );
