@@ -9,6 +9,10 @@ const _kCompletedAt = 'onboarding.completedAt';
 const _kLastStep = 'onboarding.lastStep';
 
 /// Pasos del onboarding. El orden es el que se muestra en la UI.
+///
+/// Nota: no declaramos un getter `index` propio porque Dart ya lo tiene
+/// implícito en los enums. Usamos `position` para el índice persistido
+/// (que coincide con el implícito, pero es explícito y legible).
 enum OnboardingStep {
   welcome,
   relationship,
@@ -16,7 +20,10 @@ enum OnboardingStep {
   firebase,
   linking;
 
-  int get index => OnboardingStep.values.indexOf(this);
+  /// Posición del paso dentro del enum. Es equivalente al `index`
+  /// implícito, pero con nombre propio para dejar claro que se usa
+  /// como índice de persistencia y de UI.
+  int get position => OnboardingStep.values.indexOf(this);
 
   static OnboardingStep fromIndex(int i) {
     if (i < 0 || i >= OnboardingStep.values.length) {
@@ -29,19 +36,16 @@ enum OnboardingStep {
 /// Estado del onboarding en memoria + persistido.
 class OnboardingState {
   /// `true` cuando el usuario terminó (o saltó) el onboarding completo.
-  /// Es lo único que `app.dart` necesita leer para decidir qué mostrar.
   final bool completed;
 
   /// Cuándo se completó. `null` si nunca.
   final DateTime? completedAt;
 
   /// Último paso visto. Sirve para "reanudar" si el usuario cierra la
-  /// app a la mitad del onboarding. `welcome` es el default.
+  /// app a la mitad del onboarding.
   final OnboardingStep lastStep;
 
-  /// `false` hasta que `SharedPreferences` termine de cargar. Evita
-  /// que `app.dart` decida antes de tiempo y muestre un flash del
-  /// onboarding a usuarios que ya lo completaron.
+  /// `false` hasta que `SharedPreferences` termine de cargar.
   final bool loaded;
 
   const OnboardingState({
@@ -89,17 +93,13 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
   }
 
-  /// Avanza el paso actual y lo persiste. Se llama cuando el usuario
-  /// toca "Continuar" en un paso, o cuando el `PageView` cambia de página.
   Future<void> setStep(OnboardingStep step) async {
     if (state.lastStep == step) return;
     state = state.copyWith(lastStep: step);
     final prefs = await _prefsFuture;
-    await prefs.setInt(_kLastStep, step.index);
+    await prefs.setInt(_kLastStep, step.position);
   }
 
-  /// Marca el onboarding como completado. Persiste el flag y la fecha.
-  /// Después de esto, `app.dart` deja de mostrarlo.
   Future<void> complete() async {
     final now = DateTime.now();
     state = state.copyWith(
@@ -111,12 +111,6 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     await prefs.setString(_kCompletedAt, now.toIso8601String());
   }
 
-  /// Vuelve a poner el onboarding como pendiente. Se llama desde
-  /// Ajustes → "Repetir configuración inicial".
-  ///
-  /// **No borra** la configuración existente (relación, CARTO, Firebase,
-  /// grupo vinculado). Solo hace que el onboarding se vuelva a mostrar.
-  /// El usuario puede saltarse pasos que ya están configurados.
   Future<void> reset() async {
     state = state.copyWith(
       completed: false,
@@ -125,8 +119,6 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     final prefs = await _prefsFuture;
     await prefs.setBool(_kCompleted, false);
     await prefs.setInt(_kLastStep, 0);
-    // No borramos _kCompletedAt: guarda cuándo se completó la última
-    // vez, útil para debug y analytics locales.
   }
 }
 
