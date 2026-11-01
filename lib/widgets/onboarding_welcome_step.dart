@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/onboarding_providers.dart';
 import '../providers/relationship_providers.dart';
 import 'onboarding_scaffold.dart';
 import 'settings_components.dart';
