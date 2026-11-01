@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/linking_providers.dart';
+import '../providers/onboarding_providers.dart';
 import '../providers/relationship_providers.dart';
 import '../providers/sync_providers.dart';
 import '../services/invite_service.dart';
