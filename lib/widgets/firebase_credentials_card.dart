@@ -8,7 +8,7 @@ import '../providers/sync_providers.dart';
 import '../services/transport_config.dart';
 import 'settings_components.dart';
 
-/// Pega, valida y guarda el `google-services.json` de Firebase.
+/// Card para pegar el `google-services.json` de Firebase.
 class FirebaseCredentialsCard extends ConsumerStatefulWidget {
   final VoidCallback onSaved;
   final bool initiallyConfigured;
@@ -147,7 +147,6 @@ class _FirebaseCredentialsCardState
           ),
           const SizedBox(height: 16),
 
-          // ── Campo de paste ────────────────────────────────────────
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOutCubic,
@@ -180,7 +179,6 @@ class _FirebaseCredentialsCardState
                   onChanged: (_) => setState(() => _inlineError = null),
                 ),
                 const SizedBox(height: 4),
-                // ── Chip tonal Paste ↔ Clear con Spring Scale ─────
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 220),
                   switchInCurve: Curves.easeOutBack,
@@ -207,7 +205,6 @@ class _FirebaseCredentialsCardState
             ),
           ),
 
-          // ── Error banner deslizable ───────────────────────────────
           AnimatedSize(
             duration: const Duration(milliseconds: 260),
             curve: Curves.easeOutCubic,
@@ -268,7 +265,6 @@ class _FirebaseCredentialsCardState
           ),
           const SizedBox(height: 16),
 
-          // ── Botón guardar con morph de busy ──────────────────────
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _busy ? null : _save,
@@ -331,7 +327,6 @@ class _FirebaseCredentialsCardState
           ),
           const SizedBox(height: 16),
 
-          // ── Package name chip monoespaciado ──────────────────────
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -422,7 +417,6 @@ class _FirebaseCredentialsCardState
           ),
           const SizedBox(height: 12),
 
-          // ── Tutorial ──────────────────────────────────────────────
           _TutorialSection(
             expanded: _expandedTutorial,
             onToggle: () {
@@ -438,7 +432,6 @@ class _FirebaseCredentialsCardState
   }
 }
 
-/// Chip de acción (Pegar / Limpiar) con Spring Scale al tocar.
 class _ActionChip extends StatefulWidget {
   final IconData icon;
   final String label;
@@ -502,7 +495,6 @@ class _ActionChipState extends State<_ActionChip> {
   }
 }
 
-/// Tutorial colapsable con timeline vertical.
 class _TutorialSection extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggle;
@@ -593,11 +585,12 @@ class _TutorialSection extends StatelessWidget {
                         ),
                         _TutorialStep(
                           number: 2,
-                          title: 'Entra a Firebase Console',
+                          title: 'Crea el proyecto',
                           body:
                               'Abre console.firebase.google.com y crea un '
-                              'proyecto nuevo. Si te pregunta por Google '
-                              'Analytics, puedes saltártelo.',
+                              'proyecto nuevo. Te preguntará por Gemini y '
+                              'Google Analytics. Puedes desactivar ambos o '
+                              'saltártelos, no los necesitas.',
                         ),
                         _TutorialStep(
                           number: 3,
@@ -605,7 +598,8 @@ class _TutorialSection extends StatelessWidget {
                           body:
                               'Menú ☰ → Compilación → Realtime Database → '
                               'Crear base de datos. Elige la ubicación más '
-                              'cercana y empieza en modo bloqueado.',
+                              'cercana (us-central está bien) y selecciona '
+                              '"Comenzar en modo bloqueado".',
                         ),
                         _TutorialStep(
                           number: 4,
@@ -632,9 +626,10 @@ class _TutorialSection extends StatelessWidget {
                           number: 6,
                           title: 'Descarga el archivo',
                           body:
-                              'Al registrar la app, Firebase te da un botón '
-                              '"Descargar google-services.json". Tócalo. Se '
-                              'descarga al celular.',
+                              'Al registrar la app, Firebase te mostrará '
+                              'mucho código de Gradle. Ignóralo todo. Busca '
+                              'el botón "Descargar google-services.json" y '
+                              'tócalo. Se descarga al celular.',
                         ),
                         _TutorialStep(
                           number: 7,
