@@ -40,7 +40,6 @@ class _OnboardingFirebaseStepState
 
   final _credentialsKey = GlobalKey<FirebaseCredentialsCardState>();
   
-  // Estado para saber si la tarjeta de credenciales tiene texto
   bool _hasCredentialsText = false;
   bool _isSavingCredentials = false;
 
@@ -76,10 +75,8 @@ class _OnboardingFirebaseStepState
 
   Future<void> _handlePrimaryAction() async {
     if (_subStep == _FirebaseSubStep.credentials) {
-      if (!_hasCredentialsText) {
-        // Si está vacío, no hace nada (el botón está deshabilitado en apariencia)
-        return;
-      }
+      if (!_hasCredentialsText) return;
+      
       setState(() => _isSavingCredentials = true);
       _credentialsKey.currentState?.validateAndSave();
       
@@ -135,99 +132,92 @@ class _OnboardingFirebaseStepState
       step: OnboardingStep.firebase,
       onSkip: _confirmSkipWithWarning,
       bottomAction: _buildBottomBar(scheme, theme),
-      child: SingleChildScrollView(
-        // Key para mantener el scroll estable
-        key: const PageStorageKey('firebase_scroll'),
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 8),
-            
-            Center(
-              child: Container(
-                width: 96,
-                height: 96,
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(32),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.primary.withValues(alpha: 0.25),
-                      blurRadius: 24,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.local_fire_department_rounded,
-                  size: 44,
-                  color: scheme.onPrimaryContainer,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            Text(
-              'Firebase',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.4,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Este paso es el más técnico, pero también el más importante: '
-              'aquí es donde Ailoviu se vuelve un espacio privado de verdad. '
-              'Lo que se manden viaja cifrado; ni siquiera el servidor que '
-              'lo transporta puede leerlo.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            _SubStepIndicator(
-              current: _subStep,
-              onTap: (step) {
-                final canGoBack = step.index < _subStep.index;
-                if (canGoBack) _goTo(step);
-              },
-            ),
-            const SizedBox(height: 20),
-
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 450),
-              switchInCurve: Curves.easeInOutCubicEmphasized,
-              switchOutCurve: Curves.easeInOutCubicEmphasized,
-              transitionBuilder: (child, animation) {
-                final curved = CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOutCubicEmphasized,
-                );
-                return FadeTransition(
-                  opacity: curved,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: Offset(0.06 * _direction, 0),
-                      end: Offset.zero,
-                    ).animate(curved),
-                    child: child,
+      // Quitamos el SingleChildScrollView interno para que el Scaffold maneje el scroll
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          
+          Center(
+            child: Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(32),
+                boxShadow: [
+                  BoxShadow(
+                    color: scheme.primary.withValues(alpha: 0.25),
+                    blurRadius: 24,
+                    spreadRadius: 2,
                   ),
-                );
-              },
-              child: _buildSubStep(),
+                ],
+              ),
+              child: Icon(
+                Icons.local_fire_department_rounded,
+                size: 44,
+                color: scheme.onPrimaryContainer,
+              ),
             ),
+          ),
+          const SizedBox(height: 24),
 
-            const SizedBox(height: 32),
-          ],
-        ),
+          Text(
+            'Firebase',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Este paso es el más técnico, pero también el más importante: '
+            'aquí es donde Ailoviu se vuelve un espacio privado de verdad. '
+            'Lo que se manden viaja cifrado; ni siquiera el servidor que '
+            'lo transporta puede leerlo.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          _SubStepIndicator(
+            current: _subStep,
+            onTap: (step) {
+              final canGoBack = step.index < _subStep.index;
+              if (canGoBack) _goTo(step);
+            },
+          ),
+          const SizedBox(height: 20),
+
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            switchInCurve: Curves.easeInOutCubicEmphasized,
+            switchOutCurve: Curves.easeInOutCubicEmphasized,
+            transitionBuilder: (child, animation) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeInOutCubicEmphasized,
+              );
+              return FadeTransition(
+                opacity: curved,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(0.06 * _direction, 0),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: child,
+                ),
+              );
+            },
+            child: _buildSubStep(),
+          ),
+
+          const SizedBox(height: 32),
+        ],
       ),
     );
   }
@@ -309,7 +299,6 @@ class _OnboardingFirebaseStepState
   Widget _buildBottomBar(ColorScheme scheme, ThemeData theme) {
     final isLastSubStep = _subStep == _FirebaseSubStep.test;
     
-    // Etiqueta e icono dinámicos
     String label;
     IconData icon;
     bool canContinue = true;
@@ -318,7 +307,7 @@ class _OnboardingFirebaseStepState
       if (!_hasCredentialsText) {
         label = 'Pega el archivo arriba';
         icon = Icons.arrow_upward_rounded;
-        canContinue = false; // Deshabilitado si no hay texto
+        canContinue = false;
       } else {
         label = 'Validar y guardar';
         icon = Icons.check_rounded;
@@ -437,7 +426,6 @@ class _OnboardingFirebaseStepState
   }
 }
 
-// ── Diálogo de Advertencia ───────────────────────────────────────────
 class _SkipWarningDialog extends StatelessWidget {
   final VoidCallback onConfirm;
   final VoidCallback onCancel;
@@ -549,7 +537,6 @@ class _SkipWarningDialog extends StatelessWidget {
   }
 }
 
-// ── Indicador de Sub-pasos ───────────────────────────────────────────
 class _SubStepIndicator extends StatelessWidget {
   final _FirebaseSubStep current;
   final ValueChanged<_FirebaseSubStep> onTap;
