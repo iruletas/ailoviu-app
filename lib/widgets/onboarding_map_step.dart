@@ -9,12 +9,6 @@ import 'onboarding_scaffold.dart';
 import 'settings_components.dart';
 
 /// Paso 3: API key de CARTO (opcional).
-///
-/// Si el usuario la deja vacía, el mapa usa OpenStreetMap (funciona,
-/// se ve menos limpio). No es obligatoria.
-///
-/// Toda la persistencia vive en `cartoKeyProvider`. Este widget solo
-/// lee el valor inicial y llama a `setKey` al continuar.
 class OnboardingMapStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
@@ -37,6 +31,11 @@ class _OnboardingMapStepState extends ConsumerState<OnboardingMapStep> {
   bool _focused = false;
   String _initialKey = '';
   bool _obtenerPressed = false;
+  String? _inlineError;
+
+  static const String _cartoUrl = 'https://carto.com/basemaps/apikey';
+  static const String _cartoText = 
+      'Ailoviu is a personal app to share real-time location with my partner.';
 
   @override
   void initState() {
@@ -58,36 +57,49 @@ class _OnboardingMapStepState extends ConsumerState<OnboardingMapStep> {
   Future<void> _paste() async {
     HapticFeedback.lightImpact();
     final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null) {
-      _controller.text = data!.text!;
-      setState(() {});
-    }
+    if (data?.text == null) return;
+    _controller.text = data!.text!;
+    setState(() => _inlineError = null);
   }
 
   void _clear() {
     HapticFeedback.lightImpact();
     _controller.clear();
-    setState(() {});
+    setState(() => _inlineError = null);
+  }
+
+  Future<void> _copyCartoText() async {
+    HapticFeedback.lightImpact();
+    await Clipboard.setData(const ClipboardData(text: _cartoText));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Texto copiado'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _openCarto() async {
     HapticFeedback.lightImpact();
-    final uri = Uri.parse('https://carto.com/basemaps/apikey');
+    final uri = Uri.parse(_cartoUrl);
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo abrir el navegador'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        setState(() => _inlineError = 'No se pudo abrir el navegador.');
       }
     }
   }
 
   Future<void> _saveAndContinue() async {
-    HapticFeedback.mediumImpact();
     final trimmed = _controller.text.trim();
+    if (trimmed.length < 20) {
+      HapticFeedback.heavyImpact();
+      setState(() => _inlineError = 'La clave es muy corta. Revisa el correo que te envió CARTO.');
+      return;
+    }
+    
+    HapticFeedback.mediumImpact();
     if (trimmed != _initialKey) {
       await ref.read(cartoKeyProvider.notifier).setKey(trimmed);
     }
@@ -98,16 +110,17 @@ class _OnboardingMapStepState extends ConsumerState<OnboardingMapStep> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
-    final hasKey = _controller.text.trim().isNotEmpty;
+    final hasText = _controller.text.trim().isNotEmpty;
+    final isValidLength = _controller.text.trim().length >= 20;
 
     return OnboardingScaffold(
       step: OnboardingStep.map,
       onSkip: widget.onSkip,
       bottomAction: _BottomNav(
         onBack: widget.onBack,
-        primaryLabel: hasKey ? 'Guardar y continuar' : 'Continuar sin mapa',
-        onPrimary: _saveAndContinue,
-        primaryIsSecondaryStyle: !hasKey,
+        primaryLabel: isValidLength ? 'Guardar y continuar' : 'Continuar sin mapa',
+        onPrimary: isValidLength ? _saveAndContinue : widget.onNext,
+        primaryIsSecondaryStyle: !isValidLength,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -131,11 +144,9 @@ class _OnboardingMapStepState extends ConsumerState<OnboardingMapStep> {
           ),
           const SizedBox(height: 24),
 
-          // Preview del mapa (mock, sin gastar tiles reales).
-          _MapPreview(hasKey: hasKey),
+          _MapPreview(hasKey: isValidLength),
           const SizedBox(height: 20),
 
-          // Campo de API key.
           BentoCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,83 +190,124 @@ class _OnboardingMapStepState extends ConsumerState<OnboardingMapStep> {
                         child: TextField(
                           controller: _controller,
                           focusNode: _focusNode,
-                          onChanged: (_) => setState(() {}),
+                          onChanged: (_) => setState(() => _inlineError = null),
                           decoration: const InputDecoration(
-                            hintText: 'eyJhbGci…',
+                            hintText: 'Pega la clave aquí',
                             border: InputBorder.none,
                             isDense: true,
                           ),
                         ),
                       ),
-                      // Toggle Paste ↔ Clear animado.
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        switchInCurve: Curves.easeOutBack,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          return ScaleTransition(
-                            scale: animation,
-                            child: RotationTransition(
-                              turns: Tween<double>(
-                                begin: 0.85,
-                                end: 1.0,
-                              ).animate(animation),
-                              child: FadeTransition(
-                                opacity: animation,
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                        child: hasKey
-                            ? IconButton(
-                                key: const ValueKey('clear'),
-                                onPressed: _clear,
-                                icon: const Icon(Icons.clear_rounded),
-                                visualDensity: VisualDensity.compact,
-                              )
-                            : IconButton(
-                                key: const ValueKey('paste'),
-                                onPressed: _paste,
-                                icon: const Icon(
-                                  Icons.content_paste_rounded,
-                                ),
-                                tooltip: 'Pegar',
-                                visualDensity: VisualDensity.compact,
-                              ),
-                      ),
+                      if (hasText)
+                        IconButton(
+                          onPressed: _clear,
+                          icon: const Icon(Icons.clear_rounded),
+                          visualDensity: VisualDensity.compact,
+                        )
+                      else
+                        IconButton(
+                          onPressed: _paste,
+                          icon: const Icon(Icons.content_paste_rounded),
+                          tooltip: 'Pegar',
+                          visualDensity: VisualDensity.compact,
+                        ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                
+                if (_inlineError != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: scheme.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline_rounded, size: 16, color: scheme.onErrorContainer),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _inlineError!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onErrorContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                
+                const SizedBox(height: 16),
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapDown: (_) => setState(() => _obtenerPressed = true),
                   onTapUp: (_) => setState(() => _obtenerPressed = false),
-                  onTapCancel: () =>
-                      setState(() => _obtenerPressed = false),
+                  onTapCancel: () => setState(() => _obtenerPressed = false),
                   onTap: _openCarto,
                   child: AnimatedScale(
                     scale: _obtenerPressed ? 0.95 : 1.0,
                     duration: const Duration(milliseconds: 140),
-                    curve: _obtenerPressed
-                        ? Curves.easeOutCubic
-                        : Curves.easeOutBack,
+                    curve: _obtenerPressed ? Curves.easeOutCubic : Curves.easeOutBack,
                     child: FilledButton.tonalIcon(
                       onPressed: _openCarto,
                       icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                      label: const Text('Obtener clave en carto.com'),
+                      label: const Text('Abrir carto.com'),
                       style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
+                        minimumSize: const Size.fromHeight(48),
                         shape: const StadiumBorder(),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        textStyle: theme.textTheme.labelMedium,
                       ),
                     ),
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // Tarjeta de instrucciones
+          BentoCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const TonalMicroHeader(
+                  icon: Icons.assignment_rounded,
+                  title: 'Cómo obtener tu API Key',
+                  description: 'Sigue estos pasos en el sitio de CARTO.',
+                ),
+                const SizedBox(height: 16),
+                _InstructionStep(
+                  number: '1',
+                  text: 'Abre carto.com/basemaps/apikey en tu navegador.',
+                ),
+                _InstructionStep(
+                  number: '2',
+                  text: 'Llena el formulario con tu correo y tu nombre.',
+                ),
+                _InstructionStep(
+                  number: '3',
+                  text: 'En "Is this a commercial project?", elige "No".',
+                ),
+                _InstructionStep(
+                  number: '4',
+                  text: 'En "What are you building?", pega este texto:',
+                  trailing: TextButton.icon(
+                    onPressed: _copyCartoText,
+                    icon: const Icon(Icons.copy_rounded, size: 14),
+                    label: const Text('Copiar texto'),
+                  ),
+                ),
+                _InstructionStep(
+                  number: '5',
+                  text: 'Acepta los términos, resuelve el CAPTCHA y pide la clave.',
+                ),
+                _InstructionStep(
+                  number: '6',
+                  text: 'Revisa tu correo. CARTO te enviará la API Key ahí.',
+                  isLast: true,
                 ),
               ],
             ),
@@ -268,288 +320,85 @@ class _OnboardingMapStepState extends ConsumerState<OnboardingMapStep> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// _MapPreview — mock visual del mapa, reactivo a hasKey
+// Widgets auxiliares
 // ══════════════════════════════════════════════════════════════════════
 
-class _MapPreview extends StatelessWidget {
-  final bool hasKey;
+class _InstructionStep extends StatelessWidget {
+  final String number;
+  final String text;
+  final Widget? trailing;
+  final bool isLast;
 
-  const _MapPreview({required this.hasKey});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-      height: 180,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: hasKey
-              ? [
-                  scheme.tertiaryContainer.withValues(alpha: 0.85),
-                  scheme.primaryContainer.withValues(alpha: 0.85),
-                ]
-              : [
-                  scheme.surfaceContainerHighest,
-                  scheme.surfaceContainerHigh,
-                ],
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          children: [
-            // Calles simuladas.
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _MapMockPainter(
-                  lineColor: hasKey
-                      ? scheme.onTertiaryContainer.withValues(alpha: 0.18)
-                      : scheme.onSurfaceVariant.withValues(alpha: 0.15),
-                ),
-              ),
-            ),
-            // Pines simulados con bounce al cambiar de modo.
-            Positioned(
-              top: 56,
-              left: 68,
-              child: _BouncingPin(
-                hasKey: hasKey,
-                color: hasKey ? scheme.primary : scheme.onSurfaceVariant,
-                letter: 'A',
-              ),
-            ),
-            Positioned(
-              top: 100,
-              right: 78,
-              child: _BouncingPin(
-                hasKey: hasKey,
-                color:
-                    hasKey ? scheme.secondary : scheme.onSurfaceVariant,
-                letter: 'B',
-              ),
-            ),
-            // Badge de estado con pop-in al cambiar.
-            Positioned(
-              top: 12,
-              left: 12,
-              child: _StatusBadge(hasKey: hasKey),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Pin que da un pequeño salto vertical la primera vez que `hasKey`
-/// pasa a `true`. No rebota al desactivar (sería ruido).
-class _BouncingPin extends StatefulWidget {
-  final bool hasKey;
-  final Color color;
-  final String letter;
-
-  const _BouncingPin({
-    required this.hasKey,
-    required this.color,
-    required this.letter,
+  const _InstructionStep({
+    required this.number,
+    required this.text,
+    this.trailing,
+    this.isLast = false,
   });
-
-  @override
-  State<_BouncingPin> createState() => _BouncingPinState();
-}
-
-class _BouncingPinState extends State<_BouncingPin>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 520),
-      value: 1.0,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _BouncingPin oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.hasKey && widget.hasKey) {
-      _controller.forward(from: 0.0);
-      HapticFeedback.selectionClick();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    // Salto elástico: 0 → -14 → 0 (con overshoot suave).
-    final dy = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: -14.0)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 40,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: -14.0, end: 0.0)
-            .chain(CurveTween(curve: Curves.bounceOut)),
-        weight: 60,
-      ),
-    ]).animate(_controller);
-
-    return AnimatedBuilder(
-      animation: dy,
-      builder: (context, child) {
-        return Transform.translate(
-          offset: Offset(0, dy.value),
-          child: child,
-        );
-      },
-      child: Container(
-        width: 36,
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: widget.color,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: scheme.surface, width: 2.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Text(
-          widget.letter,
-          style: TextStyle(
-            color: scheme.surface,
-            fontWeight: FontWeight.w800,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Badge de estado con pop-in al cambiar de modo.
-class _StatusBadge extends StatelessWidget {
-  final bool hasKey;
-
-  const _StatusBadge({required this.hasKey});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: hasKey
-            ? scheme.tertiaryContainer
-            : scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 320),
-        switchInCurve: Curves.easeOutBack,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) {
-          return ScaleTransition(
-            scale: animation,
-            child: FadeTransition(opacity: animation, child: child),
-          );
-        },
-        child: Row(
-          key: ValueKey(hasKey),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              hasKey ? Icons.check_circle_rounded : Icons.public_rounded,
-              size: 14,
-              color: hasKey
-                  ? scheme.onTertiaryContainer
-                  : scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              hasKey ? 'CARTO limpio' : 'OpenStreetMap',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: hasKey
-                    ? scheme.onTertiaryContainer
-                    : scheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  number,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSecondaryContainer,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (!isLast)
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    color: scheme.outlineVariant.withValues(alpha: 0.3),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    text,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    const SizedBox(height: 4),
+                    trailing!,
+                  ],
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
-
-class _MapMockPainter extends CustomPainter {
-  final Color lineColor;
-
-  _MapMockPainter({required this.lineColor});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = lineColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-
-    final w = size.width;
-    final h = size.height;
-
-    for (int i = 1; i <= 3; i++) {
-      final y = h * i / 4;
-      final path = Path()..moveTo(0, y);
-      final cx1 = w * 0.3;
-      final cx2 = w * 0.7;
-      path.cubicTo(cx1, y - 12, cx2, y + 12, w, y);
-      canvas.drawPath(path, paint);
-    }
-
-    for (int i = 1; i <= 2; i++) {
-      final x = w * i / 3;
-      final path = Path()..moveTo(x, 0);
-      final cy1 = h * 0.3;
-      final cy2 = h * 0.7;
-      path.cubicTo(x - 10, cy1, x + 10, cy2, x, h);
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _MapMockPainter old) =>
-      old.lineColor != lineColor;
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// _BottomNav — superficie flotante con morphing implícito del primario
-// ══════════════════════════════════════════════════════════════════════
 
 class _BottomNav extends StatelessWidget {
   final VoidCallback onBack;
@@ -569,16 +418,8 @@ class _BottomNav extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
-    // Colores objetivo del botón primario según el modo.
-    final bg = primaryIsSecondaryStyle
-        ? scheme.surfaceContainerHighest
-        : scheme.primary;
-    final fg = primaryIsSecondaryStyle
-        ? scheme.onSurface
-        : scheme.onPrimary;
-    final borderColor = primaryIsSecondaryStyle
-        ? scheme.outlineVariant.withValues(alpha: 0.4)
-        : Colors.transparent;
+    final bg = primaryIsSecondaryStyle ? scheme.surfaceContainerHighest : scheme.primary;
+    final fg = primaryIsSecondaryStyle ? scheme.onSurface : scheme.onPrimary;
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -605,14 +446,10 @@ class _BottomNav extends StatelessWidget {
               backgroundColor: scheme.surfaceContainerHighest,
               foregroundColor: scheme.onSurface,
               minimumSize: const Size(48, 48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             ),
           ),
           const SizedBox(width: 8),
-          // Botón primario con morphing implícito (un solo widget,
-          // colores animados). Mantenemos la ripple con Material+InkWell.
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -624,10 +461,6 @@ class _BottomNav extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: bg,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: borderColor,
-                    width: 1,
-                  ),
                 ),
                 child: Material(
                   color: Colors.transparent,
@@ -639,20 +472,14 @@ class _BottomNav extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 20,
-                            color: fg,
-                          ),
+                          Icon(Icons.arrow_forward_rounded, size: 20, color: fg),
                           const SizedBox(width: 8),
-                          AnimatedDefaultTextStyle(
-                            duration: const Duration(milliseconds: 280),
-                            curve: Curves.easeOutCubic,
-                            style: theme.textTheme.labelLarge!.copyWith(
+                          Text(
+                            primaryLabel,
+                            style: theme.textTheme.labelLarge?.copyWith(
                               color: fg,
                               fontWeight: FontWeight.w600,
                             ),
-                            child: Text(primaryLabel),
                           ),
                         ],
                       ),
@@ -666,4 +493,90 @@ class _BottomNav extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MapPreview extends StatelessWidget {
+  final bool hasKey;
+
+  const _MapPreview({required this.hasKey});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      height: 180,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: hasKey
+              ? [scheme.tertiaryContainer, scheme.primaryContainer]
+              : [scheme.surfaceContainerHighest, scheme.surfaceContainerHigh],
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _MapMockPainter(
+                  lineColor: hasKey
+                      ? scheme.onTertiaryContainer.withValues(alpha: 0.18)
+                      : scheme.onSurfaceVariant.withValues(alpha: 0.15),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: hasKey ? scheme.tertiaryContainer : scheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  hasKey ? 'CARTO limpio' : 'OpenStreetMap',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: hasKey ? scheme.onTertiaryContainer : scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapMockPainter extends CustomPainter {
+  final Color lineColor;
+  _MapMockPainter({required this.lineColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = lineColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    for (int i = 1; i <= 3; i++) {
+      final y = size.height * i / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+    for (int i = 1; i <= 2; i++) {
+      final x = size.width * i / 3;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MapMockPainter old) => old.lineColor != lineColor;
 }
