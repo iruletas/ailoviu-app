@@ -87,7 +87,9 @@ class FirebaseTestReport {
   static FirebaseTestReport ok() {
     return FirebaseTestReport(
       result: FirebaseTestResult.success,
-      message: 'Todo listo. A partir de aquí, lo que compartan es solo de ustedes.',
+      message:
+          'Todo listo. A partir de aquí, lo que compartan es solo de '
+          'ustedes.',
       testedAt: DateTime.now(),
     );
   }
@@ -183,15 +185,16 @@ class FirebaseTestService {
         await auth.signInAnonymously();
       }
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'admin-restricted-operation' ||
-          e.code == 'operation-not-allowed') {
+      final code = e.code;
+      if (code == 'admin-restricted-operation' ||
+          code == 'operation-not-allowed') {
         return FirebaseTestReport.fail(
           result: FirebaseTestResult.authError,
           message:
               'Falta habilitar la autenticación anónima. Ve a Firebase '
               'Console → Authentication → Comenzar → Anónimo → Habilitar, '
               'y vuelve a probar.',
-          technicalDetail: e.code,
+          technicalDetail: code,
         );
       }
       return FirebaseTestReport.fail(
@@ -199,7 +202,7 @@ class FirebaseTestService {
         message:
             'No se pudo iniciar sesión anónima en Firebase. Revisa que '
             'la autenticación esté habilitada y que tu conexión funcione.',
-        technicalDetail: e.code,
+        technicalDetail: code,
       );
     } catch (e) {
       return FirebaseTestReport.fail(
@@ -231,12 +234,17 @@ class FirebaseTestService {
             'La escritura en Firebase tardó demasiado. Revisa tu conexión '
             'a internet y vuelve a intentarlo.',
       );
-    } on FirebaseDatabaseException catch (e) {
-      // El código real viene dentro del mensaje; Firebase no expone un
-      // campo de código limpio en Realtime Database.
-      final detail = e.toString();
-      if (detail.contains('permission_denied') ||
-          detail.contains('permission-denied')) {
+    } on FirebaseException catch (e) {
+      // En Realtime Database los errores llegan como FirebaseException
+      // (de firebase_core). El código útil está en `e.code` o, si no,
+      // en el mensaje.
+      final code = e.code ?? '';
+      final detail = '$code: ${e.message ?? e.toString()}';
+      final looksLikePermission = code.contains('permission-denied') ||
+          code.contains('permission_denied') ||
+          detail.contains('permission_denied') ||
+          detail.contains('permission-denied');
+      if (looksLikePermission) {
         return FirebaseTestReport.fail(
           result: FirebaseTestResult.permissionDenied,
           message:
