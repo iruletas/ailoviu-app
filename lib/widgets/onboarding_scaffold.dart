@@ -3,23 +3,19 @@ import 'package:flutter/services.dart';
 
 import '../providers/onboarding_providers.dart';
 
-/// Chrome común del onboarding.
-///
-/// Provee:
-/// - Fondo con dos esferas tonales radiales (estático, sin blur costoso).
-/// - Barra superior con indicador de pasos por **píldoras expresivas**
-///   (5 segmentos, el activo se expande elásticamente) y botón "Saltar".
-/// - Contenido scrollable con padding consistente.
-/// - Barra inferior opcional para acciones primarias.
-///
-/// **No tiene lógica de negocio.** Solo pinta el chrome y delega los
-/// callbacks al padre.
 class OnboardingScaffold extends StatelessWidget {
   final OnboardingStep step;
   final bool showSkip;
   final VoidCallback? onSkip;
   final Widget child;
   final Widget? bottomAction;
+  
+  /// El índice visual (1-based). Si es null, se calcula del `step`.
+  /// Lo usamos para que el paso 0 (Rol) se vea como "Paso 1".
+  final int? customStepNumber;
+  
+  /// El total visual. Si es null, se calcula como 6.
+  final int? customTotalSteps;
 
   const OnboardingScaffold({
     super.key,
@@ -28,22 +24,25 @@ class OnboardingScaffold extends StatelessWidget {
     this.showSkip = true,
     this.onSkip,
     this.bottomAction,
+    this.customStepNumber,
+    this.customTotalSteps,
   });
-
-  static const int _totalSteps = 5;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    // Si no nos pasan un número custom, calculamos el estándar.
+    // role = 1, welcome = 2, relationship = 3, map = 4, firebase = 5, linking = 6
+    final currentStep = customStepNumber ?? (step.position + 1);
+    final totalSteps = customTotalSteps ?? 6;
 
     return Scaffold(
       backgroundColor: scheme.surface,
       body: Stack(
         children: [
-          // ── Fondo con esferas tonales estáticas ────────────────────
-          // Dos círculos radiales suaves en esquinas opuestas. Sin
-          // BackdropFilter (caro en Android medio). Sin animación
-          // dependiente del paso (sería lógica en la pantalla).
+          // Fondo con esferas
           Positioned(
             top: -120,
             right: -120,
@@ -61,13 +60,12 @@ class OnboardingScaffold extends StatelessWidget {
             ),
           ),
 
-          // ── Contenido ──────────────────────────────────────────────
           SafeArea(
             child: Column(
               children: [
                 _TopBar(
-                  currentStep: step.index + 1,
-                  totalSteps: _totalSteps,
+                  currentStep: currentStep,
+                  totalSteps: totalSteps,
                   showSkip: showSkip,
                   onSkip: onSkip,
                 ),
@@ -94,10 +92,6 @@ class OnboardingScaffold extends StatelessWidget {
   }
 }
 
-/// Esfera radial suave usada como capa ambiental de fondo.
-///
-/// Sin `BackdropFilter`: usa un `RadialGradient` que se desvanece a
-/// transparente, lo cual es prácticamente gratis de renderizar.
 class _AmbientOrb extends StatelessWidget {
   final Color color;
   final double size;
@@ -114,10 +108,7 @@ class _AmbientOrb extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: RadialGradient(
-              colors: [
-                color,
-                color.withValues(alpha: 0.0),
-              ],
+              colors: [color, color.withValues(alpha: 0.0)],
               stops: const [0.0, 1.0],
             ),
           ),
@@ -147,126 +138,105 @@ class _TopBar extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            children: [
-              _StepBadge(
-                current: currentStep,
-                total: totalSteps,
-                scheme: scheme,
-                theme: theme,
-              ),
-              const Spacer(),
-              if (showSkip)
-                TextButton(
-                  onPressed: () {
-                    HapticFeedback.lightImpact();
-                    onSkip?.call();
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: scheme.onSurfaceVariant,
-                    shape: const StadiumBorder(),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: const Text('Saltar'),
+          // Texto de paso
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOutBack,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(scale: animation, child: child),
+                );
+              },
+              child: Text(
+                'Paso $currentStep de $totalSteps',
+                key: ValueKey(currentStep),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.3,
                 ),
-            ],
+              ),
+            ),
           ),
-          const SizedBox(height: 12),
-          _SegmentedStepIndicator(
-            currentStep: currentStep,
-            totalSteps: totalSteps,
+          
+          const Spacer(),
+          
+          // Indicador de puntitos
+          _StepIndicator(
+            current: currentStep - 1, // 0-based
+            total: totalSteps,
           ),
+
+          const Spacer(),
+
+          // Botón Saltar
+          if (showSkip)
+            TextButton(
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                onSkip?.call();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: scheme.onSurfaceVariant,
+                shape: const StadiumBorder(),
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('Saltar'),
+            )
+          else
+            const SizedBox(width: 60), // Espacio para mantener centrado
         ],
       ),
     );
   }
 }
 
-/// Chip tonal que muestra "Paso X de 5". Animado al cambiar de paso.
-class _StepBadge extends StatelessWidget {
+class _StepIndicator extends StatelessWidget {
   final int current;
   final int total;
-  final ColorScheme scheme;
-  final ThemeData theme;
 
-  const _StepBadge({
+  const _StepIndicator({
     required this.current,
     required this.total,
-    required this.scheme,
-    required this.theme,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 260),
-        switchInCurve: Curves.easeOutBack,
-        transitionBuilder: (child, animation) {
-          return FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(scale: animation, child: child),
-          );
-        },
-        child: Text(
-          'Paso $current de $total',
-          key: ValueKey(current),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: scheme.onPrimaryContainer,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.3,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Indicador de pasos por píldoras: 5 segmentos, el activo se expande
-/// elásticamente (`flex: 3` vs `flex: 1`).
-///
-/// Es la forma M3E de mostrar progreso de onboarding (segmentos
-/// expresivos, no barra de carga).
-class _SegmentedStepIndicator extends StatelessWidget {
-  final int currentStep;
-  final int totalSteps;
-
-  const _SegmentedStepIndicator({
-    required this.currentStep,
-    required this.totalSteps,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return SizedBox(
-      height: 6,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          for (int i = 0; i < totalSteps; i++) ...[
+          for (int i = 0; i < total; i++) ...[
             if (i > 0) const SizedBox(width: 6),
-            Expanded(
-              flex: i == currentStep - 1 ? 3 : 1,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 380),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  color: i < currentStep
-                      ? scheme.primary
-                      : scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(3),
-                ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              width: i == current ? 18 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: i == current
+                    ? scheme.primary
+                    : scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(3),
               ),
             ),
           ],
