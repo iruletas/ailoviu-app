@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../providers/onboarding_providers.dart';
 import 'onboarding_scaffold.dart';
 
-/// Paso 0: Selector de rol (Anfitrión / Invitado).
 class OnboardingRoleStep extends StatefulWidget {
   final VoidCallback onHostSelected;
   final VoidCallback onGuestSelected;
@@ -23,7 +22,6 @@ class _OnboardingRoleStepState extends State<OnboardingRoleStep>
     with SingleTickerProviderStateMixin {
   late final AnimationController _heartController;
   late final Animation<double> _heartScale;
-  late final Animation<double> _glowOpacity;
 
   @override
   void initState() {
@@ -37,13 +35,6 @@ class _OnboardingRoleStepState extends State<OnboardingRoleStep>
       CurvedAnimation(
         parent: _heartController,
         curve: Curves.easeInOutCubicEmphasized,
-      ),
-    );
-
-    _glowOpacity = Tween<double>(begin: 0.15, end: 0.35).animate(
-      CurvedAnimation(
-        parent: _heartController,
-        curve: Curves.easeInOut,
       ),
     );
   }
@@ -60,64 +51,40 @@ class _OnboardingRoleStepState extends State<OnboardingRoleStep>
     final theme = Theme.of(context);
 
     return OnboardingScaffold(
-      step: OnboardingStep.welcome,
+      step: OnboardingStep.role,
+      customStepNumber: 2, // Es el paso 2 (después de Bienvenida)
       showSkip: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 24),
           
-          // ── Hero Central con Latido ────────────────────────────────
           Center(
             child: AnimatedBuilder(
               animation: _heartController,
               builder: (context, child) {
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Gradiente radial tenue de fondo
-                    Opacity(
-                      opacity: _glowOpacity.value,
-                      child: Container(
-                        width: 220,
-                        height: 220,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              scheme.primaryContainer,
-                              scheme.primaryContainer.withValues(alpha: 0.0),
-                            ],
-                            stops: const [0.2, 1.0],
-                          ),
+                return Transform.scale(
+                  scale: _heartScale.value,
+                  child: Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(32),
+                      boxShadow: [
+                        BoxShadow(
+                          color: scheme.primary.withValues(alpha: 0.2),
+                          blurRadius: 24,
+                          spreadRadius: 2,
                         ),
-                      ),
+                      ],
                     ),
-                    // Corazón con latido
-                    Transform.scale(
-                      scale: _heartScale.value,
-                      child: Container(
-                        width: 96,
-                        height: 96,
-                        decoration: BoxDecoration(
-                          color: scheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(32),
-                          boxShadow: [
-                            BoxShadow(
-                              color: scheme.primary.withValues(alpha: 0.3),
-                              blurRadius: 24,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.favorite_rounded,
-                          size: 44,
-                          color: scheme.onPrimaryContainer,
-                        ),
-                      ),
+                    child: Icon(
+                      Icons.favorite_rounded,
+                      size: 44,
+                      color: scheme.onPrimaryContainer,
                     ),
-                  ],
+                  ),
                 );
               },
             ),
@@ -239,11 +206,31 @@ class _RoleCardState extends State<_RoleCard> {
             borderRadius: BorderRadius.circular(28),
             border: Border.all(color: borderColor, width: 1),
           ),
-          child: Stack(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (widget.badgeText != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    widget.badgeText!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onTertiaryContainer,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               Row(
                 children: [
-                  // ── Squircle Reactivo ──────────────────────────────
                   AnimatedScale(
                     scale: _pressed ? 1.12 : 1.0,
                     duration: const Duration(milliseconds: 200),
@@ -294,11 +281,10 @@ class _RoleCardState extends State<_RoleCard> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // ── Cápsula de Flecha Animada ──────────────────────
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     transform: Matrix4.translationValues(
-                      _pressed ? 4.0 : 0.0, // Micro-desplazamiento
+                      _pressed ? 4.0 : 0.0,
                       0,
                       0,
                     ),
@@ -319,28 +305,6 @@ class _RoleCardState extends State<_RoleCard> {
                   ),
                 ],
               ),
-              if (widget.badgeText != null)
-                Positioned(
-                  top: -8,
-                  right: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: scheme.tertiaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      widget.badgeText!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onTertiaryContainer,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
