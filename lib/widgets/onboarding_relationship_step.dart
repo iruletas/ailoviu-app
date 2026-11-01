@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_shapes/m3e_shapes.dart';
 
+import '../providers/onboarding_providers.dart';
 import '../providers/relationship_providers.dart';
 import 'anniversary_card.dart';
 import 'onboarding_scaffold.dart';
