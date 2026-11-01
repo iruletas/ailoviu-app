@@ -23,8 +23,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int _currentStep = 0;
 
   bool _isGuest = false;
-
-  // No usar 'late final'. Debe ser mutable para permitir el cambio de flujo.
   List<Widget> _steps = [];
 
   @override
@@ -42,7 +40,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _rebuildSteps() {
     if (_isGuest) {
       _steps = [
-        const OnboardingRoleStep(
+        // Quitamos el const aquí porque los callbacks no son constantes
+        OnboardingRoleStep(
           onHostSelected: _dummy,
           onGuestSelected: _dummy,
         ),
@@ -110,7 +109,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _next() => _goTo(_currentStep + 1);
 
   void _previous() {
-    // Si el invitado intenta retroceder desde el escáner, reseteamos el flujo
     if (_isGuest && _currentStep == 1) {
       setState(() {
         _isGuest = false;
@@ -157,7 +155,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               children: _steps,
             ),
             
-            // Indicador de progreso flotante
             SafeArea(
               bottom: false,
               child: Align(
