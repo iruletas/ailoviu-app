@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/map_key_provider.dart';
+import '../providers/onboarding_providers.dart';
 import 'onboarding_scaffold.dart';
 import 'settings_components.dart';
 
