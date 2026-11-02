@@ -43,6 +43,12 @@ class SyncService {
 
   SyncTransport? _transport;
   StreamSubscription<void>? _incomingSub;
+  StreamSubscription<InviteRequest>? _inviteSub;
+
+  // Stream PROPIO del servicio: no depende de que el transporte exista
+  // todavía. Así el router puede suscribirse una sola vez al arrancar.
+  final StreamController<InviteRequest> _inviteRequestsController =
+      StreamController<InviteRequest>.broadcast();
   StreamSubscription<TransportStatus>? _statusSub;
 
   final Map<String, Uint8List> _sharedSecrets = {};
@@ -59,11 +65,8 @@ class SyncService {
 
   /// Solicitudes de invitación que llegan al host desde el QR.
   /// El `SyncRouter` la usa para mostrarlas en `pendingJoinsProvider`.
-  Stream<InviteRequest> get inviteRequests {
-    final t = _transport;
-    if (t is FirebaseTransport) return t.inviteRequests;
-    return const Stream.empty();
-  }
+  Stream<InviteRequest> get inviteRequests =>
+      _inviteRequestsController.stream;
 
   Future<void> initialize() async {
     try {
@@ -128,7 +131,18 @@ class SyncService {
 
   Future<void> _initializeTransport(TransportConfig config) async {
     if (config is FirebaseTransportConfig) {
-      _transport = FirebaseTransport();
+      final firebaseTransport = FirebaseTransport();
+      _transport = firebaseTransport;
+      // Nos suscribimos ANTES de initialize(): onChildAdded emite las
+      // solicitudes que ya existían en cuanto empieza a escuchar.
+      await _inviteSub?.cancel();
+      _inviteSub = firebaseTransport.inviteRequests.listen(
+        (request) {
+          if (!_inviteRequestsController.isClosed) {
+            _inviteRequestsController.add(request);
+          }
+        },
+      );
     } else {
       _setStatus(SyncStatus.offline);
       return;
@@ -457,9 +471,11 @@ class SyncService {
   Future<void> dispose() async {
     await _incomingSub?.cancel();
     await _statusSub?.cancel();
+    await _inviteSub?.cancel();
     await _transport?.dispose();
     _pending.clear();
     await _eventsController.close();
     await _statusController.close();
+    await _inviteRequestsController.close();
   }
 }
