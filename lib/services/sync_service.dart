@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/sync_models.dart';
@@ -12,12 +13,6 @@ import 'notification_service.dart';
 import 'sync_transport.dart';
 import 'transport_config.dart';
 
-/// Orquestador de sync multi-miembro.
-///
-/// Mantiene un `sharedSecret` por cada peer aprobado. `enqueue`
-/// acepta `to` explícito o manda a todos si no se especifica.
-///
-/// El contrato de entrega (dedup, ACK, notifyOnly) no cambia.
 class SyncService {
   SyncService({
     required KeyStore keyStore,
@@ -62,10 +57,20 @@ class SyncService {
 
   bool get hasPeers => _sharedSecrets.isNotEmpty;
 
+  /// Solicitudes de invitación que llegan al host desde el QR.
+  /// El `SyncRouter` la usa para mostrarlas en `pendingJoinsProvider`.
+  Stream<InviteRequest> get inviteRequests {
+    final t = _transport;
+    if (t is FirebaseTransport) return t.inviteRequests;
+    return const Stream.empty();
+  }
+
   Future<void> initialize() async {
     try {
       await _notifications.initialize(requestPermission: !notifyOnly);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[SyncService] Error inicializando notificaciones: $e');
+    }
 
     _deviceId = await _keyStore.getDeviceId();
     if (_deviceId == null) {
@@ -77,7 +82,8 @@ class SyncService {
   }
 
   /// Vuelve a leer los secrets de peers y reinicializa el transporte
-  /// si hace falta. Se llama cuando entra o sale un miembro.
+  /// si hace falta. Se llama cuando entra o sale un miembro, y también
+  /// cuando el host crea un grupo (aunque esté solo).
   Future<void> reloadPeers() async {
     final members = await _keyStore.getGroupMembers();
     _sharedSecrets.clear();
@@ -89,10 +95,19 @@ class SyncService {
       try {
         _sharedSecrets[m.deviceId] =
             Uint8List.fromList(base64Decode(secretB64));
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[SyncService] Error leyendo secret de ${m.deviceId}: $e');
+      }
     }
 
-    if (_sharedSecrets.isEmpty) {
+    // Si no hay peers, PERO soy host y tengo un invite activo,
+    // igual necesitamos el transporte para escuchar solicitudes.
+    final hostId = await _keyStore.getHostDeviceId();
+    final isHost = hostId != null && hostId == _deviceId;
+    final inviteToken = await _keyStore.getActiveInviteToken();
+    final hasActiveInvite = isHost && inviteToken != null && inviteToken.isNotEmpty;
+
+    if (_sharedSecrets.isEmpty && !hasActiveInvite) {
       _setStatus(SyncStatus.unpaired);
       return;
     }
@@ -105,6 +120,9 @@ class SyncService {
 
     if (_transport == null) {
       await _initializeTransport(config);
+    } else if (_transport is FirebaseTransport) {
+      // Si el token cambió, actualizamos el listener
+      (_transport as FirebaseTransport).updateActiveInviteToken(inviteToken);
     }
   }
 
@@ -117,8 +135,12 @@ class SyncService {
     }
 
     try {
+      // Leemos el invite activo para que el transporte lo escuche
+      final inviteToken = await _keyStore.getActiveInviteToken();
+
       await _transport!.initialize({
         'deviceId': _deviceId,
+        if (inviteToken != null) 'activeInviteToken': inviteToken,
         ...config.toJson(),
       });
 
@@ -142,13 +164,12 @@ class SyncService {
             break;
         }
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[SyncService] Error inicializando transporte: $e');
       _setStatus(SyncStatus.error);
     }
   }
 
-  /// Encola un payload. `to == null` = a todos los peers.
-  /// Devuelve los ids de los sobres enviados.
   Future<List<String>> enqueue({
     required SyncType type,
     required Map<String, dynamic> payload,
@@ -210,9 +231,6 @@ class SyncService {
     return sentIds;
   }
 
-  /// Publica una solicitud de join en el buzón público del inviteToken.
-  /// El guest lo llama después de `prepareJoin`. Devuelve true si se
-  /// publicó (no garantiza que el host lo lea).
   Future<bool> publishInvite({
     required String inviteToken,
     required InviteRequest request,
@@ -225,8 +243,7 @@ class SyncService {
       );
     }
     // Fallback: si no hay transport inicializado todavía, intentamos
-    // inicializar uno a partir del transport config (el guest ya lo
-    // tiene en Keystore después de prepareJoin).
+    // inicializar uno a partir del transport config.
     final config = await TransportConfig.load(_keyStore);
     if (config is! FirebaseTransportConfig) return false;
     final tempTransport = FirebaseTransport();
@@ -241,14 +258,13 @@ class SyncService {
       );
       await tempTransport.dispose();
       return ok;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[SyncService] Error en publishInvite (fallback): $e');
       await tempTransport.dispose();
       return false;
     }
   }
 
-  /// Publica una solicitud de recuperación en el mismo buzón.
-  /// Idéntico a publishInvite pero semánticamente distinto.
   Future<bool> publishRecovery({
     required String inviteToken,
     required InviteRequest request,
@@ -286,7 +302,9 @@ class SyncService {
       _markSeen(envelope.id);
       if (!notifyOnly) _deliver(event);
       await _notifyIfNeeded(event);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[SyncService] Error en _handleIncoming: $e');
+    }
   }
 
   Future<SyncEvent?> _decode(
@@ -324,7 +342,8 @@ class SyncService {
           receivedAt: DateTime.now(),
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[SyncService] Error en _decode: $e');
       return null;
     }
   }
@@ -385,7 +404,9 @@ class SyncService {
         body: body,
         id: NotificationService.stableId(event.envelope.id),
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[SyncService] Error mostrando notificación: $e');
+    }
   }
 
   (String, String) _notificationCopyFor(SyncEvent event) {
