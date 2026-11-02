@@ -57,7 +57,6 @@ class CryptoService {
     return Uint8List.fromList(await derived.extractBytes());
   }
 
-  /// Deriva y devuelve en base64 el sharedSecret entre dos identidades.
   Future<String> deriveSharedSecretBase64({
     required String myPrivateKeyBase64,
     required String theirPublicKeyBase64,
@@ -238,9 +237,6 @@ class CryptoService {
 
   // ── Hashes de recuperación ─────────────────────────────────────
 
-  /// Normaliza una respuesta de pregunta clave: lowercase, sin
-  /// acentos, espacios colapsados a uno. Así "  Café  " y "cafe"
-  /// son equivalentes.
   String normalizeRecoveryAnswer(String raw) {
     final lower = raw.toLowerCase().trim();
     final buffer = StringBuffer();
@@ -254,35 +250,16 @@ class CryptoService {
 
   String _stripAccent(String c) {
     const map = {
-      'á': 'a',
-      'à': 'a',
-      'ä': 'a',
-      'â': 'a',
-      'ã': 'a',
-      'é': 'e',
-      'è': 'e',
-      'ë': 'e',
-      'ê': 'e',
-      'í': 'i',
-      'ì': 'i',
-      'ï': 'i',
-      'î': 'i',
-      'ó': 'o',
-      'ò': 'o',
-      'ö': 'o',
-      'ô': 'o',
-      'õ': 'o',
-      'ú': 'u',
-      'ù': 'u',
-      'ü': 'u',
-      'û': 'u',
-      'ñ': 'n',
-      'ç': 'c',
+      'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a', 'ã': 'a',
+      'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
+      'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
+      'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o', 'õ': 'o',
+      'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
+      'ñ': 'n', 'ç': 'c',
     };
     return map[c] ?? c;
   }
 
-  /// Hash de la respuesta de recuperación: SHA-256(salt || respuesta).
   String hashRecoveryAnswer({
     required String answer,
     required String saltBase64,
@@ -296,9 +273,6 @@ class CryptoService {
     return base64Encode(crypto.sha256.convert(bytes).bytes);
   }
 
-  /// Hash del PIN de recuperación: SHA-256(PIN || deviceId ||
-  /// "ailoviu-recovery-v1"). Nunca es el PIN de desbloqueo, y se
-  /// usa solo para verificar identidad en recuperación (factor B).
   String hashRecoveryPin({
     required String pin,
     required String deviceId,
@@ -309,14 +283,18 @@ class CryptoService {
 
   /// Derivación del `inviteKey` a partir del `inviteToken` en
   /// base64url. SHA-256 del token crudo.
+  ///
+  /// NOTA: `inviteToken` se genera con `base64Url.encode` y se le
+  /// quitan los '=' al final para que quepa mejor en el QR. Al
+  /// decodificar, hay que devolverle el relleno para que
+  /// `base64Url.decode` no lance `FormatException`.
   Uint8List deriveInviteKey(String inviteTokenBase64Url) {
-    final tokenBytes = base64Url.decode(inviteTokenBase64Url);
+    final padded = _padBase64(inviteTokenBase64Url);
+    final tokenBytes = base64Url.decode(padded);
     final hash = crypto.sha256.convert(tokenBytes);
     return Uint8List.fromList(hash.bytes);
   }
 
-  /// Proof de una solicitud de join: HMAC-SHA256(inviteKey,
-  /// guestDeviceId).
   String proofForJoin({
     required Uint8List inviteKey,
     required String guestDeviceId,
@@ -336,6 +314,17 @@ class CryptoService {
     return Uint8List.fromList(
       List<int>.generate(length, (_) => rng.nextInt(256)),
     );
+  }
+
+  /// Agrega los '=' de relleno que Base64 necesita.
+  String _padBase64(String input) {
+    final remainder = input.length % 4;
+    if (remainder == 0) return input;
+    if (remainder == 2) return '$input==';
+    if (remainder == 3) return '$input=';
+    // remainder == 1 es inválido en base64, pero devolvemos igual para
+    // que el error lo lance `decode` con un mensaje claro.
+    return input;
   }
 
   bool _constantTimeEquals(String a, String b) {
