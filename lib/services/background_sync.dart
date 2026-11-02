@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/sync_models.dart';
 import 'crypto_service.dart';
+import 'invite_service.dart';
 import 'key_store.dart';
 import 'notification_service.dart';
 import 'sync_service.dart';
@@ -19,7 +20,9 @@ void startBackgroundSync() {
 
 class BackgroundSyncHandler extends TaskHandler {
   SyncService? _sync;
+  NotificationService? _notifications;
   StreamSubscription<SyncStatus>? _statusSub;
+  StreamSubscription<InviteRequest>? _inviteSub;
   bool _restarting = false;
 
   @override
@@ -30,13 +33,18 @@ class BackgroundSyncHandler extends TaskHandler {
 
   Future<void> _startSync() async {
     await _stopSync();
+    final notifications = NotificationService();
+    _notifications = notifications;
     final service = SyncService(
       keyStore: KeyStore(),
       crypto: CryptoService(),
-      notifications: NotificationService(),
+      notifications: notifications,
       notifyOnly: true,
     );
     _sync = service;
+    // Nos suscribimos ANTES de initialize para no perder solicitudes
+    // que ya estén en el buzón del QR.
+    _inviteSub = service.inviteRequests.listen(_onInviteRequest);
     await service.initialize();
     _statusSub = service.status.listen(_showStatus);
     _showStatus(service.currentStatus);
@@ -45,9 +53,33 @@ class BackgroundSyncHandler extends TaskHandler {
   Future<void> _stopSync() async {
     await _statusSub?.cancel();
     _statusSub = null;
+    await _inviteSub?.cancel();
+    _inviteSub = null;
     final service = _sync;
     _sync = null;
     await service?.dispose();
+  }
+
+  /// Solicitud nueva en el buzón del QR (solo la recibe el host).
+  /// Con la app cerrada, esta es la que dispara la notificación.
+  Future<void> _onInviteRequest(InviteRequest request) async {
+    try {
+      final token = await KeyStore().getActiveInviteToken();
+      if (token == null) return;
+      final valid = InviteService(CryptoService()).verifyProof(
+        inviteToken: token,
+        guestDeviceId: request.guestDeviceId,
+        proof: request.proof,
+      );
+      if (!valid) return;
+      await _notifications?.show(
+        title: 'Nueva solicitud',
+        body: '${request.displayName} quiere unirse a tu relación.',
+        id: NotificationService.stableId('join_${request.guestDeviceId}'),
+      );
+    } catch (e) {
+      debugPrint('[BackgroundSync] Error en invite request: $e');
+    }
   }
 
   void _showStatus(SyncStatus status) {
