@@ -7,15 +7,6 @@ import '../providers/linking_providers.dart';
 import '../providers/sync_providers.dart';
 import 'settings_components.dart';
 
-/// Tarjeta de "Fulano quiere unirse al grupo", rediseñada en M3E.
-///
-/// - Squircle de avatar con pulso continuo mientras está pendiente.
-/// - Badge "Solicitud de acceso" con dot radiante.
-/// - Timestamp en MiniChip.
-/// - Botones en píldora 48px con física de press.
-/// - Loader con switch animado.
-/// - Haptic gradual (light rechazar, medium aprobar).
-/// - Toast flotante al confirmar el voto.
 class PendingJoinCard extends ConsumerStatefulWidget {
   final PendingJoin pending;
 
@@ -57,7 +48,6 @@ class _PendingJoinCardState extends ConsumerState<PendingJoinCard>
   Future<void> _vote(bool approve) async {
     if (_busy) return;
 
-    // Haptic gradual: light para rechazar, medium para aprobar.
     if (approve) {
       await HapticFeedback.mediumImpact();
     } else {
@@ -82,6 +72,24 @@ class _PendingJoinCardState extends ConsumerState<PendingJoinCard>
         );
 
     try {
+      // Verificamos si soy host y estoy solo
+      final group = await ref.read(linkingServiceProvider).snapshot();
+      final isSoloHost = group.isHost && group.approvedPeerDeviceIds.isEmpty;
+
+      if (approve && isSoloHost) {
+        // Aprobación directa sin votación
+        final router = ref.read(syncRouterProvider);
+        await router.approvePendingJoinDirect(
+          widget.pending.request.guestDeviceId,
+        );
+        if (mounted) {
+          _showVoteToast('Miembro aprobado. Enviando credenciales...');
+          setState(() => _busy = false);
+        }
+        return;
+      }
+
+      // Flujo normal de votación (grupos de 3+)
       final sync = await ref.read(syncServiceProvider.future);
       final sentIds = await sync.enqueue(
         type: SyncType.joinVote,
@@ -95,12 +103,14 @@ class _PendingJoinCardState extends ConsumerState<PendingJoinCard>
       if (sentIds.isNotEmpty && mounted) {
         _showVoteToast();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[PendingJoinCard] Error votando: $e');
+    }
 
     if (mounted) setState(() => _busy = false);
   }
 
-  void _showVoteToast() {
+  void _showVoteToast([String? customText]) {
     final scheme = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -136,7 +146,7 @@ class _PendingJoinCardState extends ConsumerState<PendingJoinCard>
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
-                  'Voto registrado · Esperando unanimidad del grupo',
+                  customText ?? 'Voto registrado · Esperando unanimidad del grupo',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontWeight: FontWeight.w600,
@@ -172,7 +182,6 @@ class _PendingJoinCardState extends ConsumerState<PendingJoinCard>
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Avatar con pulse.
                 ScaleTransition(
                   scale: _pulse,
                   child: Container(
@@ -291,10 +300,6 @@ class _PendingJoinCardState extends ConsumerState<PendingJoinCard>
     return 'Hace ${diff.inDays} d';
   }
 }
-
-// ══════════════════════════════════════════════════════════════════════
-// Helpers
-// ══════════════════════════════════════════════════════════════════════
 
 class _StatusPill extends StatelessWidget {
   final String label;
