@@ -1,8 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/group_models.dart';
 import '../models/sync_models.dart';
-import '../providers/map_key_provider.dart'; // Para leer la llave
 import 'crypto_service.dart';
 import 'invite_service.dart';
 import 'key_store.dart';
@@ -118,9 +118,13 @@ class LinkingService {
       hostPublicKeyBase64: identity.publicKeyBase64,
       transportConfig: transportConfig,
       recoveryQuestionPlain: question.questionPlain,
-      cartoKey: cartoKey, // <-- La enviamos aquí
+      cartoKey: cartoKey,
       ttl: inviteTtl,
     );
+
+    // IMPORTANTE: Guardamos el token del invite para que el host
+    // empiece a escuchar solicitudes en invites/{token}/requests.
+    await _keyStore.setActiveInviteToken(invite.inviteToken);
 
     return CreateGroupResult(
       groupId: groupId,
@@ -166,7 +170,6 @@ class LinkingService {
       Map<String, dynamic>.from(transportConfig),
     );
 
-    // Si viene la llave de CARTO, la guardamos en local
     final cartoKey = payload['cartoKey'] as String?;
     if (cartoKey != null && cartoKey.isNotEmpty) {
       await _keyStore.setCartoKey(cartoKey);
@@ -185,9 +188,36 @@ class LinkingService {
       joinedAt: DateTime.now(),
       approved: false,
     );
+    
+    // Guardamos al host como miembro (pendiente) y derivamos su secreto
+    // de inmediato, para poder descifrar el memberAccept cuando llegue.
+    final hostMember = GroupMember(
+      deviceId: invite.hostDeviceId,
+      publicKeyBase64: invite.hostPublicKeyBase64,
+      displayName: null,
+      isHost: true,
+      joinedAt: DateTime.now(),
+      approved: true,
+    );
+
     final members = await _keyStore.getGroupMembers();
     members[identity.deviceId] = me;
+    members[invite.hostDeviceId] = hostMember;
     await _keyStore.setGroupMembers(members);
+
+    // Derivar y guardar el secreto compartido con el host
+    final myPrivateKey = await _keyStore.getIdentityPrivateKey();
+    if (myPrivateKey != null) {
+      try {
+        final secret = await _crypto.deriveSharedSecretBase64(
+          myPrivateKeyBase64: myPrivateKey,
+          theirPublicKeyBase64: invite.hostPublicKeyBase64,
+        );
+        await _keyStore.setPeerSharedSecret(invite.hostDeviceId, secret);
+      } catch (e) {
+        debugPrint('[LinkingService] Error derivando secreto con host: $e');
+      }
+    }
 
     final proof = _invites.proofFor(
       invite: invite,
@@ -209,7 +239,7 @@ class LinkingService {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // Aceptar / rechazar / expulsar (sin cambios)
+  // Aceptar / rechazar / expulsar
   // ══════════════════════════════════════════════════════════════════
 
   Future<GroupMember> acceptMember({
