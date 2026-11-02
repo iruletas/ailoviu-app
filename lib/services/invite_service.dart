@@ -6,31 +6,6 @@ import 'package:uuid/uuid.dart';
 import '../models/group_models.dart';
 import 'crypto_service.dart';
 
-/// Construye y valida los QR de invitación.
-///
-/// Un QR de invitación contiene TODO lo necesario para que el guest
-/// entre sin configurar nada:
-///
-/// ```
-/// {
-///   "version": 1,
-///   "mode": "join" | "recovery",
-///   "groupId": "...",
-///   "hostDeviceId": "...",
-///   "hostPublicKeyBase64": "...",
-///   "inviteToken": "...",     // base64url, 32 bytes
-///   "expiresAt": "ISO8601",
-///   "encPayload": {           // transport.config cifrado con inviteKey
-///     "ciphertextBase64": "...",
-///     "nonceBase64": "..."
-///   },
-///   "recoveryQuestionPlain": "...", // opcional, si recovery
-///   "recoveryOldDeviceId": "..."    // opcional, si recovery
-/// }
-/// ```
-///
-/// El `inviteKey` = SHA-256(inviteToken). El guest lo tiene porque
-/// escaneó el QR. El host lo tiene porque lo generó. Nadie más.
 class InviteService {
   InviteService(this._crypto);
 
@@ -39,25 +14,27 @@ class InviteService {
 
   static const int version = 1;
 
-  /// Crea los datos del QR de join. El `transportConfig` debe estar
-  /// configurado (Firebase). Lo cifra con el inviteKey.
-  ///
-  /// [ttl] debe ser corto (10 min). Un QR vivo para siempre es una
-  /// ventana de ataque.
   Future<GroupInvitePayload> createJoinInvite({
     required String groupId,
     required String hostDeviceId,
     required String hostPublicKeyBase64,
     required Map<String, dynamic> transportConfig,
     required String recoveryQuestionPlain,
+    String? cartoKey,
     Duration ttl = const Duration(minutes: 10),
   }) async {
     final inviteToken = _generateToken();
     final inviteKey = _crypto.deriveInviteKey(inviteToken);
 
+    // Empaquetamos la config de Firebase y la llave de CARTO juntas
+    final payload = {
+      'transportConfig': transportConfig,
+      if (cartoKey != null && cartoKey.isNotEmpty) 'cartoKey': cartoKey,
+    };
+
     final encrypted = await _crypto.encryptWithKeyBytes(
       keyBytes: inviteKey,
-      payload: transportConfig,
+      payload: payload,
     );
 
     return GroupInvitePayload(
@@ -75,14 +52,6 @@ class InviteService {
     );
   }
 
-  /// Crea los datos del QR de recuperación. **No lleva
-  /// transport.config** porque el dispositivo nuevo no debe tener
-  /// acceso al buzón todavía: la recuperación se valida con A+B+C
-  /// por fuera, y la aprobación llega por el mismo canal de join
-  /// una vez que el host la confirma.
-  ///
-  /// Lleva la pregunta de recuperación y el deviceId viejo (para
-  /// que el host sepa a quién reemplazar).
   GroupInvitePayload createRecoveryInvite({
     required String groupId,
     required String hostDeviceId,
@@ -107,10 +76,9 @@ class InviteService {
     );
   }
 
-  /// Descifra el transport config del QR de join. Lanza
-  /// [InviteException] si el token es inválido, el QR expiró, o el
-  /// payload no descifra.
-  Future<Map<String, dynamic>> decryptTransportConfig(
+  /// Descifra el payload del QR de join. Devuelve un mapa que contiene
+  /// `transportConfig` (Map) y opcionalmente `cartoKey` (String).
+  Future<Map<String, dynamic>> decryptInvitePayload(
     GroupInvitePayload invite,
   ) async {
     if (invite.mode != GroupInviteMode.join) {
@@ -127,17 +95,23 @@ class InviteService {
 
     final inviteKey = _crypto.deriveInviteKey(invite.inviteToken);
     try {
-      return await _crypto.decryptWithKeyBytes(
+      final decoded = await _crypto.decryptWithKeyBytes(
         keyBytes: inviteKey,
         ciphertextBase64: ct,
         nonceBase64: nonce,
       );
+      
+      // Si por compatibilidad viene la config "suelta" (sin el wrapper),
+      // la envolvemos para que el caller siempre reciba el mismo formato.
+      if (!decoded.containsKey('transportConfig')) {
+        return {'transportConfig': decoded};
+      }
+      return decoded;
     } catch (_) {
       throw InviteException('No se pudo descifrar el QR');
     }
   }
 
-  /// Calcula el proof para una solicitud de join.
   String proofFor({
     required GroupInvitePayload invite,
     required String guestDeviceId,
@@ -149,8 +123,6 @@ class InviteService {
     );
   }
 
-  /// Verifica el proof de una solicitud de join contra un invite
-  /// conocido.
   bool verifyProof({
     required String inviteToken,
     required String guestDeviceId,
@@ -170,7 +142,6 @@ class InviteService {
 
   String _generateToken() {
     final bytes = _crypto.generateSalt();
-    // base64url sin padding, 32 bytes -> 43 chars.
     return base64Url.encode(bytes).replaceAll('=', '');
   }
 
@@ -186,9 +157,6 @@ class InviteService {
 
 enum GroupInviteMode { join, recovery }
 
-/// Datos completos del QR, tal como viajan al guest.
-///
-/// Es `@immutable` porque el guest lo recibe y no lo modifica.
 class GroupInvitePayload {
   final int version;
   final GroupInviteMode mode;
@@ -217,7 +185,6 @@ class GroupInvitePayload {
   });
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
-
   bool get isJoin => mode == GroupInviteMode.join;
   bool get isRecovery => mode == GroupInviteMode.recovery;
 
@@ -267,10 +234,8 @@ class GroupInvitePayload {
     );
   }
 
-  /// Para el QR: JSON compacto en un solo string.
   String encodeForQr() => jsonEncode(toJson());
 
-  /// Para el escáner: parsea el string del QR.
   static GroupInvitePayload fromQrString(String raw) {
     try {
       final decoded = jsonDecode(raw);
