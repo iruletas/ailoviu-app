@@ -1,464 +1,480 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/group_models.dart';
 import '../models/sync_models.dart';
-import 'crypto_service.dart';
-import 'firebase_transport.dart';
-import 'key_store.dart';
+import '../providers/home_providers.dart';
+import '../providers/linking_providers.dart';
+import '../providers/recovery_providers.dart';
+import '../providers/sync_providers.dart';
 import 'notification_service.dart';
-import 'sync_transport.dart';
-import 'transport_config.dart';
 
-class SyncService {
-  SyncService({
-    required KeyStore keyStore,
-    required CryptoService crypto,
-    required NotificationService notifications,
-    this.notifyOnly = false,
-  })  : _keyStore = keyStore,
-        _crypto = crypto,
-        _notifications = notifications;
+/// Escucha los eventos de sync y los reparte.
+class SyncRouter {
+  SyncRouter(this._ref);
 
-  final bool notifyOnly;
+  final Ref _ref;
+  StreamSubscription<SyncEvent>? _sub;
+  StreamSubscription<InviteRequest>? _inviteSub;
+  late final NotificationService _notifications =
+      _ref.read(notificationServiceProvider);
 
-  final KeyStore _keyStore;
-  final CryptoService _crypto;
-  final NotificationService _notifications;
+  void start() {
+    _sub?.cancel();
+    _sub = _ref.read(syncEventsProvider.stream).listen(_onEvent);
 
-  final _uuid = const Uuid();
-
-  late final StreamController<SyncEvent> _eventsController =
-      StreamController<SyncEvent>.broadcast(onListen: _onFirstListener);
-  final _statusController = StreamController<SyncStatus>.broadcast();
-
-  final List<SyncEvent> _pending = <SyncEvent>[];
-  static const int _maxPending = 500;
-
-  final Set<String> _seen = <String>{};
-  static const int _maxSeen = 500;
-
-  SyncTransport? _transport;
-  StreamSubscription<void>? _incomingSub;
-  StreamSubscription<TransportStatus>? _statusSub;
-
-  final Map<String, Uint8List> _sharedSecrets = {};
-
-  String? _deviceId;
-
-  SyncStatus _status = SyncStatus.unpaired;
-
-  Stream<SyncEvent> get events => _eventsController.stream;
-  Stream<SyncStatus> get status => _statusController.stream;
-  SyncStatus get currentStatus => _status;
-
-  bool get hasPeers => _sharedSecrets.isNotEmpty;
-
-  /// Solicitudes de invitación que llegan al host.
-  Stream<InviteRequest> get inviteRequests {
-    final t = _transport;
-    if (t is FirebaseTransport) return t.inviteRequests;
-    return const Stream.empty();
-  }
-
-  Future<void> initialize() async {
-    try {
-      await _notifications.initialize(requestPermission: !notifyOnly);
-    } catch (e) {
-      debugPrint('[SyncService] Error inicializando notificaciones: $e');
-    }
-
-    _deviceId = await _keyStore.getDeviceId();
-    if (_deviceId == null) {
-      _deviceId = _uuid.v4();
-      await _keyStore.setDeviceId(_deviceId!);
-    }
-
-    await reloadPeers();
-  }
-
-  /// Vuelve a leer los secrets de peers y reinicializa el transporte
-  /// si hace falta. Se llama cuando entra o sale un miembro, y también
-  /// cuando el host crea un grupo (aunque esté solo).
-  Future<void> reloadPeers() async {
-    final members = await _keyStore.getGroupMembers();
-    _sharedSecrets.clear();
-    for (final m in members.values) {
-      if (m.deviceId == _deviceId) continue;
-      if (!m.approved) continue;
-      final secretB64 = await _keyStore.getPeerSharedSecret(m.deviceId);
-      if (secretB64 == null) continue;
-      try {
-        _sharedSecrets[m.deviceId] =
-            Uint8List.fromList(base64Decode(secretB64));
-      } catch (e) {
-        debugPrint('[SyncService] Error leyendo secret de ${m.deviceId}: $e');
-      }
-    }
-
-    // Si no hay peers, PERO soy host y tengo un invite activo,
-    // igual necesitamos el transporte para escuchar solicitudes.
-    final hostId = await _keyStore.getHostDeviceId();
-    final isHost = hostId != null && hostId == _deviceId;
-    final inviteToken = await _keyStore.getActiveInviteToken();
-    final hasActiveInvite = isHost && inviteToken != null && inviteToken.isNotEmpty;
-
-    if (_sharedSecrets.isEmpty && !hasActiveInvite) {
-      _setStatus(SyncStatus.unpaired);
-      return;
-    }
-
-    final config = await TransportConfig.load(_keyStore);
-    if (!config.isConfigured) {
-      _setStatus(SyncStatus.offline);
-      return;
-    }
-
-    if (_transport == null) {
-      await _initializeTransport(config);
-    } else if (_transport is FirebaseTransport) {
-      // Si el token cambió, actualizamos el listener
-      (_transport as FirebaseTransport).updateActiveInviteToken(inviteToken);
-    }
-  }
-
-  Future<void> _initializeTransport(TransportConfig config) async {
-    if (config is FirebaseTransportConfig) {
-      _transport = FirebaseTransport();
+    _inviteSub?.cancel();
+    // Nos suscribimos al stream de invitaciones (solo host lo emitirá)
+    final syncService = _ref.read(syncServiceProvider).valueOrNull;
+    if (syncService != null) {
+      _inviteSub = syncService.inviteRequests.listen(_onInviteRequest);
     } else {
-      _setStatus(SyncStatus.offline);
+      // Si el service aún no está listo, esperamos a que lo esté
+      _ref.read(syncServiceProvider.future).then((service) {
+        _inviteSub?.cancel();
+        _inviteSub = service.inviteRequests.listen(_onInviteRequest);
+      }).catchError((Object e) {
+        debugPrint('[SyncRouter] Error obteniendo SyncService: $e');
+      });
+    }
+  }
+
+  Future<void> _onEvent(SyncEvent event) async {
+    try {
+      switch (event.payload.type) {
+        case SyncType.state:
+          await handleHomeSyncPayload(
+            ref: _ref,
+            type: event.payload.type,
+            data: event.payload.data,
+          );
+          break;
+        case SyncType.memberJoin:
+          await _handleMemberJoin(event);
+          break;
+        case SyncType.memberLeave:
+          await _handleMemberLeave(event);
+          break;
+        case SyncType.hostCredentials:
+          await _handleHostCredentials(event);
+          break;
+        case SyncType.joinRequest:
+          await _handleJoinRequest(event);
+          break;
+        case SyncType.joinVote:
+          await _handleJoinVote(event);
+          break;
+        case SyncType.memberAccept:
+          await _handleMemberAccept(event);
+          break;
+        case SyncType.memberReject:
+          await _handleMemberReject(event);
+          break;
+        case SyncType.recoveryRequest:
+          await _handleRecoveryRequest(event);
+          break;
+        case SyncType.recoveryVote:
+          await _handleRecoveryVote(event);
+          break;
+        case SyncType.recoveryAccept:
+          await _handleRecoveryAccept(event);
+          break;
+        case SyncType.recoveryPinUpdate:
+          await _handleRecoveryPinUpdate(event);
+          break;
+        case SyncType.recoveryQuestionUpdate:
+          await _handleRecoveryQuestionUpdate(event);
+          break;
+        default:
+          break;
+      }
+    } catch (e) {
+      debugPrint('[SyncRouter] Error en _onEvent (${event.envelope.type.name}): $e');
+    }
+  }
+
+  /// Se dispara cuando llega una solicitud nueva al buzón del QR
+  /// (sin sobre cifrado, directo de `invites/{token}/requests`).
+  Future<void> _onInviteRequest(InviteRequest request) async {
+    try {
+      // Si ya la tenemos pendiente, no hacemos nada.
+      if (_ref.read(pendingJoinsProvider).containsKey(request.guestDeviceId)) {
+        return;
+      }
+
+      // Validamos el proof
+      final token = await _ref.read(keyStoreProvider).getActiveInviteToken();
+      if (token == null) return;
+
+      final inviteService = _ref.read(inviteServiceProvider);
+      final isValid = inviteService.verifyProof(
+        inviteToken: token,
+        guestDeviceId: request.guestDeviceId,
+        proof: request.proof,
+      );
+
+      if (!isValid) {
+        debugPrint('[SyncRouter] Proof inválido para ${request.guestDeviceId}');
+        return;
+      }
+
+      // Agregamos al provider para que aparezca la tarjeta
+      _ref.read(pendingJoinsProvider.notifier).add(request);
+
+      // Notificación local
+      await _notifications.show(
+        title: 'Nueva solicitud',
+        body: '${request.displayName} quiere unirse a tu relación.',
+        id: NotificationService.stableId('join_${request.guestDeviceId}'),
+      );
+    } catch (e) {
+      debugPrint('[SyncRouter] Error procesando invite request: $e');
+    }
+  }
+
+  // ── Miembros ────────────────────────────────────────────────────
+
+  Future<void> _handleMemberJoin(SyncEvent event) async {
+    final memberJson = event.payload.data['member'] as Map?;
+    if (memberJson == null) return;
+    final member = GroupMember.fromJson(
+      Map<String, dynamic>.from(memberJson),
+    );
+    await _ref.read(linkingServiceProvider).acceptMember(newMember: member);
+    await _reloadSync();
+  }
+
+  Future<void> _handleMemberLeave(SyncEvent event) async {
+    final deviceId = event.payload.data['deviceId'] as String?;
+    if (deviceId == null) return;
+    await _ref.read(linkingServiceProvider).removeMember(deviceId);
+    await _reloadSync();
+  }
+
+  Future<void> _handleHostCredentials(SyncEvent event) async {
+    final config = event.payload.data['config'] as Map?;
+    if (config == null) return;
+    await _ref.read(keyStoreProvider).setTransportConfig(
+          Map<String, dynamic>.from(config),
+        );
+    await _reloadSync();
+  }
+
+  // ── Join ────────────────────────────────────────────────────────
+
+  Future<void> _handleJoinRequest(SyncEvent event) async {
+    final request = _decodeInviteRequest(event.payload.data);
+    if (request == null) return;
+    _ref.read(pendingJoinsProvider.notifier).add(request);
+
+    if (!await _amIHost()) return;
+    final sync = await _ref.read(syncServiceProvider.future);
+    final group = await _ref.read(linkingServiceProvider).snapshot();
+    for (final peer in group.approvedPeerDeviceIds) {
+      await sync.enqueue(
+        type: SyncType.joinRequest,
+        payload: request.toJson(),
+        to: peer,
+      );
+    }
+  }
+
+  Future<void> _handleJoinVote(SyncEvent event) async {
+    final guestDeviceId = event.payload.data['guestDeviceId'] as String?;
+    final voterDeviceId = event.payload.data['voterDeviceId'] as String?;
+    final vote = event.payload.data['vote'] as bool? ?? false;
+    if (guestDeviceId == null || voterDeviceId == null) return;
+
+    _ref.read(pendingJoinsProvider.notifier).registerVote(
+          guestDeviceId,
+          voterDeviceId,
+          vote,
+        );
+
+    if (!await _amIHost()) return;
+
+    if (_ref.read(pendingJoinsProvider.notifier).hasAnyRejection(guestDeviceId)) {
+      await _rejectJoin(guestDeviceId);
       return;
     }
 
-    try {
-      // Leemos el invite activo para que el transporte lo escuche
-      final inviteToken = await _keyStore.getActiveInviteToken();
+    // Si estoy solo (2 personas), el voto del host es suficiente.
+    final group = await _ref.read(linkingServiceProvider).snapshot();
+    final expected = group.approvedPeerDeviceIds;
+    final isSoloHost = expected.isEmpty;
 
-      await _transport!.initialize({
-        'deviceId': _deviceId,
-        if (inviteToken != null) 'activeInviteToken': inviteToken,
-        ...config.toJson(),
-      });
+    final unanimous = isSoloHost ||
+        _ref
+            .read(pendingJoinsProvider.notifier)
+            .hasUnanimousApproval(guestDeviceId, expected);
 
-      _incomingSub = _transport!.incoming
-          .asyncMap<void>(_handleIncoming)
-          .listen((_) {});
+    if (!unanimous) return;
 
-      _statusSub = _transport!.status.listen((s) {
-        switch (s) {
-          case TransportStatus.connected:
-            _setStatus(SyncStatus.online);
-            break;
-          case TransportStatus.connecting:
-            _setStatus(SyncStatus.syncing);
-            break;
-          case TransportStatus.disconnected:
-            _setStatus(SyncStatus.offline);
-            break;
-          case TransportStatus.error:
-            _setStatus(SyncStatus.error);
-            break;
-        }
-      });
-    } catch (e) {
-      debugPrint('[SyncService] Error inicializando transporte: $e');
-      _setStatus(SyncStatus.error);
-    }
+    await _approveMember(guestDeviceId, group);
   }
 
-  Future<List<String>> enqueue({
-    required SyncType type,
-    required Map<String, dynamic> payload,
-    String? to,
-    String? replyTo,
-    int? ttlMs,
-  }) async {
-    final transport = _transport;
-    final deviceId = _deviceId;
-    if (transport == null || deviceId == null) {
-      throw StateError('Sync no inicializado');
+  /// Aprobación directa sin votación (para cuando el host está solo).
+  Future<void> approvePendingJoinDirect(String guestDeviceId) async {
+    final group = await _ref.read(linkingServiceProvider).snapshot();
+    if (!group.isHost) return;
+    if (group.approvedPeerDeviceIds.isNotEmpty) {
+      // Hay más miembros, hay que votar
+      return;
     }
-
-    final targets = to != null
-        ? [to]
-        : _sharedSecrets.keys.toList(growable: false);
-    if (targets.isEmpty) return [];
-
-    final sentIds = <String>[];
-    for (final peerId in targets) {
-      final secret = _sharedSecrets[peerId];
-      if (secret == null) continue;
-
-      final id = _uuid.v4();
-      final createdAt = DateTime.now().millisecondsSinceEpoch;
-      final encrypted = await _crypto.encrypt(
-        sharedSecret: secret,
-        payload: payload,
-      );
-      final signature = _crypto.signEnvelope(
-        sharedSecret: secret,
-        v: '1',
-        id: id,
-        from: deviceId,
-        to: peerId,
-        type: type.name,
-        createdAt: createdAt.toString(),
-        nonce: encrypted.nonceBase64,
-        ciphertext: encrypted.ciphertextBase64,
-      );
-
-      final envelope = SyncEnvelope(
-        v: 1,
-        id: id,
-        from: deviceId,
-        to: peerId,
-        type: type,
-        createdAt: createdAt,
-        ttlMs: ttlMs,
-        nonce: encrypted.nonceBase64,
-        ciphertext: encrypted.ciphertextBase64,
-        signature: signature,
-        replyTo: replyTo,
-      );
-
-      final result = await transport.send(envelope);
-      if (result.accepted) sentIds.add(id);
-    }
-    return sentIds;
+    await _approveMember(guestDeviceId, group);
   }
 
-  Future<bool> publishInvite({
-    required String inviteToken,
-    required InviteRequest request,
-  }) async {
-    final transport = _transport;
-    if (transport is FirebaseTransport) {
-      return transport.publishInviteRequest(
-        inviteToken: inviteToken,
-        request: request,
-      );
-    }
-    // Fallback: si no hay transport inicializado todavía, intentamos
-    // inicializar uno a partir del transport config.
-    final config = await TransportConfig.load(_keyStore);
-    if (config is! FirebaseTransportConfig) return false;
-    final tempTransport = FirebaseTransport();
-    try {
-      await tempTransport.initialize({
-        'deviceId': _deviceId,
-        ...config.toJson(),
-      });
-      final ok = await tempTransport.publishInviteRequest(
-        inviteToken: inviteToken,
-        request: request,
-      );
-      await tempTransport.dispose();
-      return ok;
-    } catch (e) {
-      debugPrint('[SyncService] Error en publishInvite (fallback): $e');
-      await tempTransport.dispose();
-      return false;
-    }
-  }
-
-  Future<bool> publishRecovery({
-    required String inviteToken,
-    required InviteRequest request,
-  }) => publishInvite(inviteToken: inviteToken, request: request);
-
-  Future<void> requestFullSync() async {
-    await enqueue(
-      type: SyncType.syncRequest,
-      payload: {'requestedAt': DateTime.now().toIso8601String()},
-    );
-  }
-
-  Future<void> _handleIncoming(SyncEnvelope envelope) async {
-    final transport = _transport;
-    if (transport == null) return;
-
-    try {
-      if (_seen.contains(envelope.id)) {
-        if (!notifyOnly) _ack(envelope.id);
-        return;
-      }
-
-      final secret = _sharedSecrets[envelope.from];
-      if (secret == null) {
-        if (!notifyOnly) _ack(envelope.id);
-        return;
-      }
-
-      final event = await _decode(envelope, secret);
-      if (event == null) {
-        if (!notifyOnly) _ack(envelope.id);
-        return;
-      }
-
-      _markSeen(envelope.id);
-      if (!notifyOnly) _deliver(event);
-      await _notifyIfNeeded(event);
-    } catch (e) {
-      debugPrint('[SyncService] Error en _handleIncoming: $e');
-    }
-  }
-
-  Future<SyncEvent?> _decode(
-    SyncEnvelope envelope,
-    Uint8List secret,
+  Future<void> _approveMember(
+    String guestDeviceId,
+    GroupSnapshot group,
   ) async {
+    final pending = _ref.read(pendingJoinsProvider)[guestDeviceId];
+    if (pending == null) return;
+    final request = pending.request;
+
+    final newMember = GroupMember(
+      deviceId: request.guestDeviceId,
+      publicKeyBase64: request.guestPublicKeyBase64,
+      displayName: request.displayName,
+      isHost: false,
+      joinedAt: DateTime.now(),
+      approved: true,
+      recoveryPinHash: request.recoveryPinHash,
+    );
+
+    // 1. Guardamos al miembro y su secreto ANTES de enviar memberAccept,
+    //    para que el sobre tenga a quién ir.
+    await _ref.read(linkingServiceProvider).acceptMember(newMember: newMember);
+    await _reloadSync();
+
+    // 2. Mandamos memberAccept al invitado con la lista actualizada.
+    final updatedGroup = await _ref.read(linkingServiceProvider).snapshot();
+    final sync = await _ref.read(syncServiceProvider.future);
+    await sync.enqueue(
+      type: SyncType.memberAccept,
+      payload: {
+        'members': updatedGroup.members.values.map((m) => m.toJson()).toList(),
+      },
+      to: request.guestDeviceId,
+    );
+
+    // 3. Avisamos a los demás.
+    for (final peer in updatedGroup.approvedPeerDeviceIds) {
+      if (peer == request.guestDeviceId) continue;
+      await sync.enqueue(
+        type: SyncType.memberJoin,
+        payload: {'member': newMember.toJson()},
+        to: peer,
+      );
+    }
+
+    _ref.read(pendingJoinsProvider.notifier).remove(guestDeviceId);
+
+    // 4. Limpiamos el token activo y el buzón del invite.
+    await _ref.read(keyStoreProvider).clearActiveInviteToken();
+    await _reloadSync();
+  }
+
+  Future<void> _rejectJoin(String guestDeviceId) async {
+    final request = _ref.read(pendingJoinsProvider)[guestDeviceId]?.request;
+    _ref.read(pendingJoinsProvider.notifier).remove(guestDeviceId);
+    if (request == null) return;
     try {
-      final valid = _crypto.verifyEnvelope(
-        sharedSecret: secret,
-        v: envelope.v.toString(),
-        id: envelope.id,
-        from: envelope.from,
-        to: envelope.to,
-        type: envelope.type.name,
-        createdAt: envelope.createdAt.toString(),
-        nonce: envelope.nonce,
-        ciphertext: envelope.ciphertext,
-        signature: envelope.signature,
-      );
-      if (!valid) return null;
-      if (envelope.isExpired()) return null;
-
-      final payload = await _crypto.decrypt(
-        sharedSecret: secret,
-        ciphertextBase64: envelope.ciphertext,
-        nonceBase64: envelope.nonce,
-      );
-
-      return SyncEvent(
-        envelope: envelope,
-        payload: SyncPayload(
-          type: envelope.type,
-          data: payload,
-          replyTo: envelope.replyTo,
-          receivedAt: DateTime.now(),
-        ),
+      final sync = await _ref.read(syncServiceProvider.future);
+      await sync.enqueue(
+        type: SyncType.memberReject,
+        payload: {'guestDeviceId': guestDeviceId},
+        to: guestDeviceId,
       );
     } catch (e) {
-      debugPrint('[SyncService] Error en _decode: $e');
+      debugPrint('[SyncRouter] Error enviando reject: $e');
+    }
+  }
+
+  Future<void> _handleMemberAccept(SyncEvent event) async {
+    final membersJson = event.payload.data['members'] as List?;
+    if (membersJson == null) return;
+    for (final raw in membersJson) {
+      final m = GroupMember.fromJson(
+        Map<String, dynamic>.from(raw as Map),
+      );
+      await _ref.read(linkingServiceProvider).acceptMember(newMember: m);
+    }
+    await _reloadSync();
+    _ref.read(pendingJoinsProvider.notifier).clearAll();
+  }
+
+  Future<void> _handleMemberReject(SyncEvent event) async {
+    _ref.read(pendingJoinsProvider.notifier).clearAll();
+  }
+
+  // ── Recuperación (sin cambios de fondo) ─────────────────────────
+
+  Future<void> _handleRecoveryRequest(SyncEvent event) async {
+    final request = _decodeInviteRequest(event.payload.data);
+    if (request == null) return;
+    _ref.read(pendingRecoveriesProvider.notifier).add(request);
+
+    if (!await _amIHost()) return;
+    final sync = await _ref.read(syncServiceProvider.future);
+    final group = await _ref.read(linkingServiceProvider).snapshot();
+    for (final peer in group.approvedPeerDeviceIds) {
+      await sync.enqueue(
+        type: SyncType.recoveryRequest,
+        payload: request.toJson(),
+        to: peer,
+      );
+    }
+  }
+
+  Future<void> _handleRecoveryVote(SyncEvent event) async {
+    final guestDeviceId = event.payload.data['guestDeviceId'] as String?;
+    final voterDeviceId = event.payload.data['voterDeviceId'] as String?;
+    final vote = event.payload.data['vote'] as bool? ?? false;
+    if (guestDeviceId == null || voterDeviceId == null) return;
+
+    _ref.read(pendingRecoveriesProvider.notifier).registerVote(
+          guestDeviceId,
+          voterDeviceId,
+          vote,
+        );
+
+    if (!await _amIHost()) return;
+
+    if (_ref
+        .read(pendingRecoveriesProvider.notifier)
+        .hasAnyRejection(guestDeviceId)) {
+      _ref
+          .read(pendingRecoveriesProvider.notifier)
+          .remove(guestDeviceId);
+      return;
+    }
+
+    final group = await _ref.read(linkingServiceProvider).snapshot();
+    final expected = group.approvedPeerDeviceIds;
+    final isSoloHost = expected.isEmpty;
+    final unanimous = isSoloHost ||
+        _ref
+            .read(pendingRecoveriesProvider.notifier)
+            .hasUnanimousApproval(guestDeviceId, expected);
+
+    if (!unanimous) return;
+
+    final request =
+        _ref.read(pendingRecoveriesProvider)[guestDeviceId]?.request;
+    if (request == null || request.recoveryOldDeviceId == null) return;
+
+    final newMember = await _ref.read(recoveryServiceProvider).promoteRecovery(
+          oldDeviceId: request.recoveryOldDeviceId!,
+          newDeviceId: request.guestDeviceId,
+          newDevicePublicKeyBase64: request.guestPublicKeyBase64,
+          displayName: request.displayName,
+          newRecoveryPinHash: request.recoveryPinHash,
+        );
+
+    await _reloadSync();
+
+    final sync = await _ref.read(syncServiceProvider.future);
+    await sync.enqueue(
+      type: SyncType.recoveryAccept,
+      payload: {
+        'oldDeviceId': request.recoveryOldDeviceId,
+        'newMember': newMember.toJson(),
+      },
+      to: request.guestDeviceId,
+    );
+    for (final peer in group.approvedPeerDeviceIds) {
+      if (peer == request.guestDeviceId) continue;
+      await sync.enqueue(
+        type: SyncType.memberLeave,
+        payload: {'deviceId': request.recoveryOldDeviceId},
+        to: peer,
+      );
+      await sync.enqueue(
+        type: SyncType.memberJoin,
+        payload: {'member': newMember.toJson()},
+        to: peer,
+      );
+    }
+
+    _ref.read(pendingRecoveriesProvider.notifier).clearAll();
+  }
+
+  Future<void> _handleRecoveryAccept(SyncEvent event) async {
+    final oldId = event.payload.data['oldDeviceId'] as String?;
+    final newMemberJson = event.payload.data['newMember'] as Map?;
+    if (oldId == null || newMemberJson == null) return;
+
+    final newMember = GroupMember.fromJson(
+      Map<String, dynamic>.from(newMemberJson),
+    );
+    await _ref.read(recoveryServiceProvider).promoteRecovery(
+          oldDeviceId: oldId,
+          newDeviceId: newMember.deviceId,
+          newDevicePublicKeyBase64: newMember.publicKeyBase64,
+          displayName: newMember.displayName ?? '',
+          newRecoveryPinHash: newMember.recoveryPinHash,
+        );
+    await _reloadSync();
+    _ref.read(pendingRecoveriesProvider.notifier).clearAll();
+  }
+
+  Future<void> _handleRecoveryPinUpdate(SyncEvent event) async {
+    final deviceId = event.payload.data['deviceId'] as String?;
+    final hash = event.payload.data['recoveryPinHash'] as String?;
+    if (deviceId == null) return;
+    if (hash == null) {
+      await _ref.read(keyStoreProvider).removePeerRecoveryPin(deviceId);
+    } else {
+      await _ref.read(linkingServiceProvider).updatePeerRecoveryPin(
+            deviceId: deviceId,
+            recoveryPinHash: hash,
+          );
+    }
+  }
+
+  Future<void> _handleRecoveryQuestionUpdate(SyncEvent event) async {
+    final plain = event.payload.data['questionPlain'] as String?;
+    final hash = event.payload.data['answerHash'] as String?;
+    final salt = event.payload.data['answerSalt'] as String?;
+    if (plain == null || hash == null || salt == null) return;
+    await _ref.read(linkingServiceProvider).applyRecoveryQuestion(
+          RecoveryQuestion(
+            questionPlain: plain,
+            answerHash: hash,
+            answerSalt: salt,
+          ),
+        );
+  }
+
+  // ── util ────────────────────────────────────────────────────────
+
+  Future<bool> _amIHost() async {
+    final myId = await _ref.read(keyStoreProvider).getDeviceId();
+    final hostId = await _ref.read(keyStoreProvider).getHostDeviceId();
+    return myId != null && hostId == myId;
+  }
+
+  Future<void> _reloadSync() async {
+    final service = await _ref.read(syncServiceProvider.future);
+    await service.reloadPeers();
+  }
+
+  InviteRequest? _decodeInviteRequest(Map<String, dynamic> data) {
+    try {
+      return InviteRequest.fromJson(data);
+    } catch (e) {
+      debugPrint('[SyncRouter] Error decodificando InviteRequest: $e');
       return null;
     }
   }
 
-  void _deliver(SyncEvent event) {
-    if (_eventsController.isClosed) return;
-    if (_eventsController.hasListener) {
-      _flushPending();
-      _emit(event);
-      return;
-    }
-    if (_pending.length < _maxPending) _pending.add(event);
-  }
-
-  void _emit(SyncEvent event) {
-    _eventsController.add(event);
-    _ack(event.envelope.id);
-  }
-
-  void _ack(String envelopeId) {
-    final transport = _transport;
-    if (transport == null) return;
-    unawaited(transport.acknowledge(envelopeId));
-  }
-
-  void _onFirstListener() {
-    scheduleMicrotask(_flushPending);
-  }
-
-  void _flushPending() {
-    while (_pending.isNotEmpty &&
-        !_eventsController.isClosed &&
-        _eventsController.hasListener) {
-      _emit(_pending.removeAt(0));
-    }
-  }
-
-  void _markSeen(String id) {
-    _seen.add(id);
-    if (_seen.length > _maxSeen) _seen.remove(_seen.first);
-  }
-
-  Future<void> _notifyIfNeeded(SyncEvent event) async {
-    final type = event.envelope.type;
-    if (type != SyncType.message &&
-        type != SyncType.state &&
-        type != SyncType.memberJoin &&
-        type != SyncType.memberLeave &&
-        type != SyncType.joinRequest &&
-        type != SyncType.recoveryRequest &&
-        type != SyncType.memberAccept) {
-      return;
-    }
-    try {
-      final (title, body) = _notificationCopyFor(event);
-      await _notifications.show(
-        title: title,
-        body: body,
-        id: NotificationService.stableId(event.envelope.id),
-      );
-    } catch (e) {
-      debugPrint('[SyncService] Error mostrando notificación: $e');
-    }
-  }
-
-  (String, String) _notificationCopyFor(SyncEvent event) {
-    final d = event.payload.data;
-    switch (event.envelope.type) {
-      case SyncType.message:
-        final intent = d['intent'] as String?;
-        if (intent == 'buzz') {
-          return ('⚡ Zumbido', d['preview'] as String? ?? 'Te mandó un zumbido');
-        }
-        return ('Nuevo mensaje', d['preview'] as String? ?? 'Toca para ver');
-      case SyncType.state:
-        final sub = d['subtype'] as String?;
-        if (sub == 'status') {
-          final s = d['status'] as Map?;
-          final text = s?['text'] as String? ?? '';
-          return ('💭 Actualizó su estado', text);
-        }
-        if (sub == 'location') {
-          return ('📍 Nueva ubicación', 'Toca para ver en el mapa');
-        }
-        return ('Nuevo estado', d['preview'] as String? ?? '');
-      case SyncType.memberJoin:
-        final m = d['member'] as Map?;
-        final name = m?['displayName'] as String? ?? 'Alguien';
-        return ('👤 Nuevo integrante', '$name se unió al grupo');
-      case SyncType.memberLeave:
-        return ('👋 Salió un integrante', 'Alguien salió del grupo');
-      case SyncType.joinRequest:
-        final name = d['displayName'] as String? ?? 'Alguien';
-        return ('👤 Quiere unirse', '$name quiere unirse. Toca para aprobar');
-      case SyncType.recoveryRequest:
-        final name = d['displayName'] as String? ?? 'Alguien';
-        return ('🔄 Recuperación', '$name quiere recuperar su cuenta');
-      case SyncType.memberAccept:
-        return ('✅ Bienvenido', 'Ya eres parte del grupo');
-      default:
-        return ('Ailoviu', '');
-    }
-  }
-
-  void _setStatus(SyncStatus status) {
-    if (_status == status) return;
-    _status = status;
-    if (!_statusController.isClosed) _statusController.add(status);
-  }
-
-  Future<void> dispose() async {
-    await _incomingSub?.cancel();
-    await _statusSub?.cancel();
-    await _transport?.dispose();
-    _pending.clear();
-    await _eventsController.close();
-    await _statusController.close();
+  void dispose() {
+    _sub?.cancel();
+    _sub = null;
+    _inviteSub?.cancel();
+    _inviteSub = null;
   }
 }
