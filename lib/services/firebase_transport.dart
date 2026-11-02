@@ -25,6 +25,7 @@ class FirebaseTransport implements SyncTransport {
   StreamSubscription<DatabaseEvent>? _messagesSub;
   StreamSubscription<DatabaseEvent>? _connectionSub;
   StreamSubscription<DatabaseEvent>? _inviteRequestsSub;
+  StreamSubscription<DatabaseEvent>? _inviteChangedSub;
 
   final Set<String> _emitted = <String>{};
 
@@ -118,33 +119,45 @@ class FirebaseTransport implements SyncTransport {
   }
 
   /// Escucha las solicitudes de unión del QR.
+  ///
+  /// Escucha altas (`onChildAdded`) y cambios (`onChildChanged`): si el
+  /// mismo invitado reintenta con el mismo QR, Firebase lo reporta como
+  /// cambio, no como alta.
   void _startWatchingInvites() {
+    _inviteRequestsSub?.cancel();
+    _inviteRequestsSub = null;
+    _inviteChangedSub?.cancel();
+    _inviteChangedSub = null;
+
     final db = _db;
     final token = _activeInviteToken;
     if (db == null || token == null || token.isEmpty) return;
 
-    // Cancela el listener anterior si existe
-    _inviteRequestsSub?.cancel();
+    void onEvent(DatabaseEvent event) {
+      final raw = event.snapshot.value;
+      if (raw is! Map) return;
+      try {
+        final request =
+            InviteRequest.fromJson(Map<String, dynamic>.from(raw));
+        if (!_inviteRequestsController.isClosed) {
+          _inviteRequestsController.add(request);
+        }
+      } catch (e) {
+        debugPrint('[FirebaseTransport] Error parseando InviteRequest: $e');
+      }
+    }
+
+    void onError(Object e) {
+      debugPrint('[FirebaseTransport] Error escuchando invite requests: $e');
+    }
 
     final ref = db.ref('invites/$token/requests');
-    _inviteRequestsSub = ref.onChildAdded.listen(
-      (event) {
-        final raw = event.snapshot.value;
-        if (raw is! Map) return;
-        try {
-          final request = InviteRequest.fromJson(Map<String, dynamic>.from(raw));
-          _inviteRequestsController.add(request);
-        } catch (e) {
-          debugPrint('[FirebaseTransport] Error parseando InviteRequest: $e');
-        }
-      },
-      onError: (Object e) {
-        debugPrint('[FirebaseTransport] Error escuchando invite requests: $e');
-      },
-    );
+    _inviteRequestsSub = ref.onChildAdded.listen(onEvent, onError: onError);
+    _inviteChangedSub = ref.onChildChanged.listen(onEvent, onError: onError);
   }
 
-  // Métodos para actualizar el token activo desde fuera
+  /// Cambia el token que se escucha (QR nuevo) o deja de escuchar
+  /// (`null`). Siempre cancela el listener anterior.
   void updateActiveInviteToken(String? token) {
     if (_activeInviteToken == token) return;
     _activeInviteToken = token;
@@ -303,6 +316,8 @@ class FirebaseTransport implements SyncTransport {
     await _messagesSub?.cancel();
     await _connectionSub?.cancel();
     await _inviteRequestsSub?.cancel();
+    await _inviteChangedSub?.cancel();
+    _inviteChangedSub = null;
     _messagesSub = null;
     _connectionSub = null;
     _inviteRequestsSub = null;
