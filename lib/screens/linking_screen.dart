@@ -235,7 +235,21 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
             hostPublicKeyBase64: my.publicKeyBase64,
             transportConfig: transport,
             recoveryQuestionPlain: question.questionPlain,
+            cartoKey: await ref.read(keyStoreProvider).getCartoKey(),
           );
+
+      // CLAVE: el host debe escuchar ESTE token. Sin esto, solo el QR
+      // del primer intento (el de createGroup) llegaba al host.
+      await ref.read(keyStoreProvider).setActiveInviteToken(invite.inviteToken);
+      try {
+        final sync = await ref.read(syncServiceProvider.future);
+        await sync.reloadPeers();
+        unawaited(BackgroundSyncService.bootstrap());
+        unawaited(BackgroundSyncService.notifyReload());
+      } catch (e) {
+        debugPrint('[LinkingScreen] No se pudo escuchar el QR nuevo: $e');
+      }
+
       await HapticFeedback.lightImpact();
       if (mounted) setState(() => _activeInvite = invite);
     } catch (e) {
