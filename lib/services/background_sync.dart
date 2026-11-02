@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show DartPluginRegistrant;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,19 +12,11 @@ import 'notification_service.dart';
 import 'sync_service.dart';
 import 'transport_config.dart';
 
-/// Punto de entrada del servicio en primer plano. Debe ser una
-/// función de nivel superior con `vm:entry-point`.
 @pragma('vm:entry-point')
 void startBackgroundSync() {
   FlutterForegroundTask.setTaskHandler(BackgroundSyncHandler());
 }
 
-/// Corre en OTRO aislado (el del servicio), que sigue vivo aunque la
-/// app esté cerrada. Mantiene viva la conexión con Firebase y muestra
-/// una notificación por cada sobre nuevo.
-///
-/// Solo notifica: no entrega ni confirma sobres (`notifyOnly`). Los
-/// sobres siguen en el buzón hasta que la app los procese.
 class BackgroundSyncHandler extends TaskHandler {
   SyncService? _sync;
   StreamSubscription<SyncStatus>? _statusSub;
@@ -71,9 +64,6 @@ class BackgroundSyncHandler extends TaskHandler {
     );
   }
 
-  /// Vigilante (cada minuto): si el sync quedó en error, o si todavía
-  /// no había pareja y ya la hay, lo reinicia. `offline` NO se
-  /// reinicia: Firebase reconecta solo.
   @override
   void onRepeatEvent(DateTime timestamp) {
     final service = _sync;
@@ -104,11 +94,6 @@ class BackgroundSyncHandler extends TaskHandler {
   void onNotificationDismissed() {}
 }
 
-/// Control del servicio en primer plano desde la app.
-///
-/// Tipo `remoteMessaging`: es el pensado para apps de mensajería. No
-/// tiene el límite de 6 h de `dataSync` en Android 15 y puede
-/// reiniciarse al encender el teléfono.
 class BackgroundSyncService {
   BackgroundSyncService._();
 
@@ -141,13 +126,11 @@ class BackgroundSyncService {
     _initialized = true;
   }
 
-  /// Preferencia del usuario. Activado por defecto.
   static Future<bool> isEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_prefKey) ?? true;
   }
 
-  /// Para el futuro interruptor de Ajustes.
   static Future<void> setEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefKey, value);
@@ -160,16 +143,24 @@ class BackgroundSyncService {
 
   /// Al abrir la app: si hay pareja, transporte configurado y el
   /// usuario no lo desactivó, se asegura de que el servicio corra.
+  /// También arranca si soy host y tengo un inviteToken activo.
   static Future<void> bootstrap() async {
     try {
       if (!await isEnabled()) return;
       final keyStore = KeyStore();
-      if (!await keyStore.isLinked()) return;
+      
+      final isLinked = await keyStore.isLinked();
+      final hasActiveInvite = await keyStore.isHostWithActiveInvite();
+      
+      // Si no hay pareja Y no estoy esperando a nadie, no arrancamos.
+      if (!isLinked && !hasActiveInvite) return;
+      
       final config = await TransportConfig.load(keyStore);
       if (!config.isConfigured) return;
+      
       await start();
-    } catch (_) {
-      // El servicio es un extra: nunca debe romper el arranque.
+    } catch (e) {
+      debugPrint('[BackgroundSyncService] Error en bootstrap: $e');
     }
   }
 
@@ -195,15 +186,11 @@ class BackgroundSyncService {
   static Future<bool> get isRunning => FlutterForegroundTask.isRunningService;
 
   static Future<void> _requestPermissions() async {
-    // Android 13+: sin este permiso la notificación del servicio y
-    // las de mensajes no se ven.
     final permission = await FlutterForegroundTask.checkNotificationPermission();
     if (permission != NotificationPermission.granted) {
       await FlutterForegroundTask.requestNotificationPermission();
     }
 
-    // Sin esta exención, Android puede matar el servicio al ahorrar
-    // batería y no lo reinicia.
     if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
       await FlutterForegroundTask.requestIgnoreBatteryOptimization();
     }
