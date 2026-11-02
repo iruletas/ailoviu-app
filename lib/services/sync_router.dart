@@ -127,7 +127,8 @@ class SyncRouter {
       await _notifications.show(
         title: 'Nueva solicitud',
         body: '${request.displayName} quiere unirse a tu relación.',
-        id: NotificationService.stableId('join_${request.guestDeviceId}'),
+        id: NotificationService.stableId(
+            'join_${request.guestDeviceId}_${request.createdAt}'),
       );
     } catch (e) {
       debugPrint('[SyncRouter] Error procesando invite request: $e');
