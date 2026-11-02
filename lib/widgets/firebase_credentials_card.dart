@@ -24,23 +24,19 @@ class FirebaseCredentialsCard extends ConsumerStatefulWidget {
   });
 
   @override
-  // Aquí ya llamamos a la clase pública
   ConsumerState<FirebaseCredentialsCard> createState() =>
       FirebaseCredentialsCardState();
 }
 
-// Clase pública (sin guion bajo) para poder usar GlobalKey desde fuera
 class FirebaseCredentialsCardState
     extends ConsumerState<FirebaseCredentialsCard> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
 
   bool _focused = false;
-  bool _busy = false;
   String? _inlineError;
   bool _expandedTutorial = false;
 
-  // Estados para el feedback de copiado
   bool _copiedPackageMain = false;
   bool _copiedPackageTutorial = false;
 
@@ -53,15 +49,20 @@ class FirebaseCredentialsCardState
     _focusNode.addListener(() {
       if (mounted) setState(() => _focused = _focusNode.hasFocus);
     });
-    if (widget.initiallyConfigured) _preloadExisting();
+    // Cargamos el texto existente siempre al iniciar
+    _preloadExisting();
   }
 
   Future<void> _preloadExisting() async {
+    // Si ya hay un texto en el controlador (por un rebuild), no lo sobreescribimos
+    if (_controller.text.isNotEmpty) return;
+    
     final raw = await ref.read(keyStoreProvider).getTransportConfig();
     if (!mounted || raw == null) return;
+    
     final jsonStr = const JsonEncoder.withIndent('  ').convert(raw);
     _controller.text = jsonStr;
-    widget.onStateChanged?.call(jsonStr.isNotEmpty);
+    widget.onStateChanged?.call(true);
   }
 
   @override
@@ -126,19 +127,17 @@ class FirebaseCredentialsCardState
     }
   }
 
-  // Método público para que el padre (la barra inferior) lo llame
-  Future<void> validateAndSave() async {
-    if (_busy) return;
+  // Devuelve true si guardó, false si falló
+  Future<bool> validateAndSave() async {
     final raw = _controller.text.trim();
     if (raw.isEmpty) {
       setState(() => _inlineError =
           'Pega primero el contenido del google-services.json.');
-      return;
+      return false;
     }
-    setState(() {
-      _busy = true;
-      _inlineError = null;
-    });
+    
+    setState(() => _inlineError = null);
+
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) {
@@ -148,26 +147,28 @@ class FirebaseCredentialsCardState
         Map<String, dynamic>.from(decoded),
       );
       await ref.read(keyStoreProvider).setTransportConfig(config.toJson());
-      if (!mounted) return;
+      if (!mounted) return false;
       HapticFeedback.mediumImpact();
-      setState(() => _busy = false);
       widget.onSaved();
+      return true;
     } on FormatException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _inlineError =
-            'El JSON no es válido: ${e.message}. Revisa que hayas copiado '
-            'el archivo completo, sin cortar líneas.';
-      });
+      if (mounted) {
+        setState(() {
+          _inlineError =
+              'El JSON no es válido: ${e.message}. Revisa que hayas copiado '
+              'el archivo completo, sin cortar líneas.';
+        });
+      }
+      return false;
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _inlineError =
-            'No se pudo guardar. Revisa que el archivo sea exactamente el '
-            'que Firebase te descargó, sin modificar.';
-      });
+      if (mounted) {
+        setState(() {
+          _inlineError =
+              'No se pudo guardar. Revisa que el archivo sea exactamente el '
+              'que Firebase te descargó, sin modificar.';
+        });
+      }
+      return false;
     }
   }
 
