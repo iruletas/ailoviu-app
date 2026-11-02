@@ -278,6 +278,8 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final groupAsync = ref.watch(groupSnapshotProvider);
+    
+    // Escuchamos las solicitudes pendientes en tiempo real
     final pendingJoins = ref.watch(pendingJoinsProvider).values.toList()
       ..sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
 
@@ -331,16 +333,9 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
                     ..._buildLinkedContent(
                       context,
                       groupAsync.valueOrNull!,
+                      pendingJoins,
                     ),
-                  if (pendingJoins.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    const SectionLabel('Solicitudes pendientes'),
-                    const SizedBox(height: 8),
-                    for (final p in pendingJoins) ...[
-                      PendingJoinCard(pending: p),
-                      const SizedBox(height: 10),
-                    ],
-                  ],
+                  const SizedBox(height: 24),
                 ]),
               ),
             ),
@@ -353,6 +348,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
   List<Widget> _buildLinkedContent(
     BuildContext context,
     GroupSnapshot group,
+    List<PendingJoin> pendingJoins,
   ) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
@@ -365,7 +361,20 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     final approvedCount =
         members.where((m) => m.approved).length;
 
+    // Si soy el host y hay solicitudes pendientes, las muestro arriba
+    final showPendingSection = group.isHost && pendingJoins.isNotEmpty;
+
     return [
+      if (showPendingSection) ...[
+        const SectionLabel('Solicitudes pendientes'),
+        const SizedBox(height: 8),
+        for (final p in pendingJoins) ...[
+          PendingJoinCard(pending: p),
+          const SizedBox(height: 10),
+        ],
+        const SizedBox(height: 16),
+      ],
+      
       BentoCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
