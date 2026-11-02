@@ -3,27 +3,28 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/sync_models.dart';
 import 'sync_transport.dart';
 
-/// Transporte sobre Firebase Realtime Database.
-///
-/// Además del inbox privado (que ya existía), este transporte
-/// soporta el buzón público `invites/{token}` para el primer
-/// contacto del guest antes de tener el grupo configurado.
 class FirebaseTransport implements SyncTransport {
   FirebaseTransport();
 
   final _incomingController = StreamController<SyncEnvelope>();
   final _statusController = StreamController<TransportStatus>();
 
+  // Stream para que el host reciba las solicitudes del QR
+  final _inviteRequestsController = StreamController<InviteRequest>.broadcast();
+
   FirebaseDatabase? _db;
   String? _deviceId;
+  String? _activeInviteToken;
   bool _persistenceOn = false;
 
   StreamSubscription<DatabaseEvent>? _messagesSub;
   StreamSubscription<DatabaseEvent>? _connectionSub;
+  StreamSubscription<DatabaseEvent>? _inviteRequestsSub;
 
   final Set<String> _emitted = <String>{};
 
@@ -36,6 +37,7 @@ class FirebaseTransport implements SyncTransport {
       throw ArgumentError('Falta deviceId en transport config');
     }
     _deviceId = deviceId;
+    _activeInviteToken = config['activeInviteToken'] as String?;
 
     final options = FirebaseOptions(
       apiKey: config['apiKey'] as String,
@@ -50,16 +52,12 @@ class FirebaseTransport implements SyncTransport {
       await Firebase.initializeApp(options: options);
     }
 
-    // Anónimo: el guest necesita auth para escribir en invites/{token}.
-    // El host también, pero ya está autenticado por el mismo flujo.
     final auth = FirebaseAuth.instance;
     if (auth.currentUser == null) {
       try {
         await auth.signInAnonymously();
-      } catch (_) {
-        // Sin auth el inbox privado igual funciona (reglas: auth != null).
-        // El buzón público de invites va a fallar. Es aceptable si el
-        // guest ya está vinculado.
+      } catch (e) {
+        debugPrint('[FirebaseTransport] Error en auth anónima: $e');
       }
     }
 
@@ -70,7 +68,9 @@ class FirebaseTransport implements SyncTransport {
 
     try {
       db.setPersistenceEnabled(true);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FirebaseTransport] No se pudo activar persistencia: $e');
+    }
     _persistenceOn = true;
 
     _db = db;
@@ -78,6 +78,7 @@ class FirebaseTransport implements SyncTransport {
     _statusController.add(TransportStatus.connecting);
     _startWatchingConnection();
     _startListening();
+    _startWatchingInvites(); // Arrancamos el escucha de solicitudes
   }
 
   void _startWatchingConnection() {
@@ -92,7 +93,8 @@ class FirebaseTransport implements SyncTransport {
               : TransportStatus.disconnected,
         );
       },
-      onError: (Object _) {
+      onError: (Object e) {
+        debugPrint('[FirebaseTransport] Error de conexión: $e');
         if (_statusController.isClosed) return;
         _statusController.add(TransportStatus.error);
       },
@@ -107,12 +109,49 @@ class FirebaseTransport implements SyncTransport {
     final query = db.ref('inbox/$deviceId/messages').orderByChild('createdAt');
     _messagesSub = query.onChildAdded.listen(
       _onChildAdded,
-      onError: (Object _) {
+      onError: (Object e) {
+        debugPrint('[FirebaseTransport] Error en inbox: $e');
         if (_statusController.isClosed) return;
         _statusController.add(TransportStatus.error);
       },
     );
   }
+
+  /// Escucha las solicitudes de unión del QR.
+  void _startWatchingInvites() {
+    final db = _db;
+    final token = _activeInviteToken;
+    if (db == null || token == null || token.isEmpty) return;
+
+    // Cancela el listener anterior si existe
+    _inviteRequestsSub?.cancel();
+
+    final ref = db.ref('invites/$token/requests');
+    _inviteRequestsSub = ref.onChildAdded.listen(
+      (event) {
+        final raw = event.snapshot.value;
+        if (raw is! Map) return;
+        try {
+          final request = InviteRequest.fromJson(Map<String, dynamic>.from(raw));
+          _inviteRequestsController.add(request);
+        } catch (e) {
+          debugPrint('[FirebaseTransport] Error parseando InviteRequest: $e');
+        }
+      },
+      onError: (Object e) {
+        debugPrint('[FirebaseTransport] Error escuchando invite requests: $e');
+      },
+    );
+  }
+
+  // Métodos para actualizar el token activo desde fuera
+  void updateActiveInviteToken(String? token) {
+    if (_activeInviteToken == token) return;
+    _activeInviteToken = token;
+    _startWatchingInvites();
+  }
+
+  Stream<InviteRequest> get inviteRequests => _inviteRequestsController.stream;
 
   void _onChildAdded(DatabaseEvent event) {
     if (_incomingController.isClosed) return;
@@ -120,15 +159,20 @@ class FirebaseTransport implements SyncTransport {
     final ref = event.snapshot.ref;
 
     if (raw is! Map) {
-      unawaited(ref.remove().catchError((Object _) {}));
+      unawaited(ref.remove().catchError((Object e) {
+        debugPrint('[FirebaseTransport] Error limpiando mensaje corrupto: $e');
+      }));
       return;
     }
 
     final SyncEnvelope envelope;
     try {
       envelope = SyncEnvelope.fromJson(Map<String, dynamic>.from(raw));
-    } catch (_) {
-      unawaited(ref.remove().catchError((Object _) {}));
+    } catch (e) {
+      debugPrint('[FirebaseTransport] Error parseando SyncEnvelope: $e');
+      unawaited(ref.remove().catchError((Object err) {
+        debugPrint('[FirebaseTransport] Error limpiando envelope malformado: $err');
+      }));
       return;
     }
 
@@ -146,7 +190,9 @@ class FirebaseTransport implements SyncTransport {
       db
           .ref('inbox/$deviceId/messages/$envelopeId')
           .remove()
-          .catchError((Object _) {}),
+          .catchError((Object e) {
+        debugPrint('[FirebaseTransport] Error en acknowledge: $e');
+      }),
     );
   }
 
@@ -175,18 +221,13 @@ class FirebaseTransport implements SyncTransport {
         error: 'Sin conexión',
       );
     } catch (e) {
+      debugPrint('[FirebaseTransport] Error en send: $e');
       return TransportResult(accepted: false, error: e.toString());
     }
   }
 
   // ── Buzón público de invites ────────────────────────────────────
-  //
-  // A diferencia del inbox privado, este buzón no está cifrado por
-  // par (todavía no hay par). El guest escribe su solicitud con el
-  // proof calculado a partir del inviteToken. El host lo lee y lo
-  // valida.
 
-  /// El guest publica su solicitud en `invites/{token}/requests/{deviceId}`.
   Future<bool> publishInviteRequest({
     required String inviteToken,
     required InviteRequest request,
@@ -199,35 +240,22 @@ class FirebaseTransport implements SyncTransport {
           .set(request.toJson())
           .timeout(_sendTimeout);
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[FirebaseTransport] Error publicando invite: $e');
       return false;
     }
   }
 
-  /// El host escucha las solicitudes entrantes para un inviteToken.
-  Stream<InviteRequest> watchInviteRequests(String inviteToken) {
-    final db = _db;
-    if (db == null) return const Stream.empty();
-    final ref = db.ref('invites/$inviteToken/requests');
-    return ref.onChildAdded.map((event) {
-      final raw = event.snapshot.value;
-      if (raw is! Map) throw StateError('Solicitud malformada');
-      return InviteRequest.fromJson(Map<String, dynamic>.from(raw));
-    });
-  }
-
-  /// El host borra el buzón completo cuando ya procesó todas las
-  /// solicitudes (o cuando expira el QR).
   Future<void> clearInvite(String inviteToken) async {
     final db = _db;
     if (db == null) return;
     try {
       await db.ref('invites/$inviteToken').remove();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FirebaseTransport] Error limpiando invite: $e');
+    }
   }
 
-  /// Barrido de invites huérfanos: el host limpia los que ya
-  /// expiraron. Se llama al arrancar la app.
   Future<void> sweepExpiredInvites({
     required Duration maxAge,
   }) async {
@@ -259,7 +287,9 @@ class FirebaseTransport implements SyncTransport {
           await db.ref('invites/$token').remove();
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FirebaseTransport] Error en sweepInvites: $e');
+    }
   }
 
   @override
@@ -272,10 +302,13 @@ class FirebaseTransport implements SyncTransport {
   Future<void> dispose() async {
     await _messagesSub?.cancel();
     await _connectionSub?.cancel();
+    await _inviteRequestsSub?.cancel();
     _messagesSub = null;
     _connectionSub = null;
+    _inviteRequestsSub = null;
     unawaited(_incomingController.close());
     unawaited(_statusController.close());
+    unawaited(_inviteRequestsController.close());
     _emitted.clear();
     _db = null;
   }
