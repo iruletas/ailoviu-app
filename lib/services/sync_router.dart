@@ -8,6 +8,7 @@ import '../providers/home_providers.dart';
 import '../providers/linking_providers.dart';
 import '../providers/recovery_providers.dart';
 import '../providers/sync_providers.dart';
+import 'notification_service.dart';
 
 /// Escucha los eventos de sync y los reparte.
 class SyncRouter {
@@ -15,6 +16,7 @@ class SyncRouter {
 
   final Ref _ref;
   StreamSubscription<SyncEvent>? _sub;
+  late final NotificationService _notifications = _ref.read(notificationServiceProvider);
 
   void start() {
     _sub?.cancel();
@@ -106,13 +108,24 @@ class SyncRouter {
   Future<void> _handleJoinRequest(SyncEvent event) async {
     final request = _decodeInviteRequest(event.payload.data);
     if (request == null) return;
+    
+    // Guardamos en el provider para que la UI lo muestre
     _ref.read(pendingJoinsProvider.notifier).add(request);
+
+    // Notificación local para el host
+    final group = await _ref.read(linkingServiceProvider).snapshot();
+    if (group.isHost) {
+      await _notifications.show(
+        title: 'Nueva solicitud',
+        body: '${request.displayName} quiere unirse a tu relación.',
+        id: NotificationService.stableId('join_${request.guestDeviceId}'),
+      );
+    }
 
     // Si soy el host, reenvío a los demás miembros (que el guest no
     // conoce todavía) para que voten.
     if (!await _amIHost()) return;
     final sync = await _ref.read(syncServiceProvider.future);
-    final group = await _ref.read(linkingServiceProvider).snapshot();
     for (final peer in group.approvedPeerDeviceIds) {
       await sync.enqueue(
         type: SyncType.joinRequest,
