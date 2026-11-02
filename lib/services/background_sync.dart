@@ -75,7 +75,8 @@ class BackgroundSyncHandler extends TaskHandler {
       await _notifications?.show(
         title: 'Nueva solicitud',
         body: '${request.displayName} quiere unirse a tu relación.',
-        id: NotificationService.stableId('join_${request.guestDeviceId}'),
+        id: NotificationService.stableId(
+            'join_${request.guestDeviceId}_${request.createdAt}'),
       );
     } catch (e) {
       debugPrint('[BackgroundSync] Error en invite request: $e');
@@ -114,7 +115,13 @@ class BackgroundSyncHandler extends TaskHandler {
   }
 
   @override
-  void onReceiveData(Object data) {}
+  void onReceiveData(Object data) {
+    // La app avisa que cambió el token del QR o los miembros.
+    if (data == 'reloadPeers') {
+      final service = _sync;
+      if (service != null) unawaited(service.reloadPeers());
+    }
+  }
 
   @override
   void onNotificationButtonPressed(String id) {}
@@ -193,6 +200,18 @@ class BackgroundSyncService {
       await start();
     } catch (e) {
       debugPrint('[BackgroundSyncService] Error en bootstrap: $e');
+    }
+  }
+
+  /// Avisa al servicio (otro aislado) que recargue peers y el token
+  /// del QR activo. No hace nada si el servicio no está corriendo.
+  static Future<void> notifyReload() async {
+    try {
+      if (await FlutterForegroundTask.isRunningService) {
+        FlutterForegroundTask.sendDataToTask('reloadPeers');
+      }
+    } catch (e) {
+      debugPrint('[BackgroundSyncService] Error en notifyReload: $e');
     }
   }
 
