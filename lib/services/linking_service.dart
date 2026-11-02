@@ -2,22 +2,11 @@ import 'package:uuid/uuid.dart';
 
 import '../models/group_models.dart';
 import '../models/sync_models.dart';
+import '../providers/map_key_provider.dart'; // Para leer la llave
 import 'crypto_service.dart';
 import 'invite_service.dart';
 import 'key_store.dart';
 
-/// Servicio de vinculación de grupo (N miembros).
-///
-/// - [createGroup]: el host crea el grupo (requiere Firebase
-///   configurado y pregunta de recuperación).
-/// - [prepareJoin]: el guest descifra el QR y prepara su solicitud.
-/// - [acceptMember] / [rejectMember]: miembro aceptado/rechazado.
-/// - [removeMember]: expulsa a alguien.
-/// - [setLocalRecoveryPin]: factor B.
-/// - [setRecoveryQuestion] / [applyRecoveryQuestion]: factor A.
-///
-/// La verificación de A y B en una recuperación vive en
-/// `RecoveryService`, no acá.
 class LinkingService {
   LinkingService({
     required KeyStore keyStore,
@@ -120,12 +109,16 @@ class LinkingService {
     );
     await _keyStore.setGroupMembers({identity.deviceId: me});
 
+    // Leemos la llave de CARTO (si existe) para empaquetarla en el QR
+    final cartoKey = await _keyStore.getCartoKey();
+
     final invite = await _invites.createJoinInvite(
       groupId: groupId,
       hostDeviceId: identity.deviceId,
       hostPublicKeyBase64: identity.publicKeyBase64,
       transportConfig: transportConfig,
       recoveryQuestionPlain: question.questionPlain,
+      cartoKey: cartoKey, // <-- La enviamos aquí
       ttl: inviteTtl,
     );
 
@@ -162,8 +155,22 @@ class LinkingService {
       }
     }
 
-    final transportConfig = await _invites.decryptTransportConfig(invite);
-    await _keyStore.setTransportConfig(transportConfig);
+    // Desciframos el paquete (transportConfig + cartoKey)
+    final payload = await _invites.decryptInvitePayload(invite);
+    
+    final transportConfig = payload['transportConfig'] as Map?;
+    if (transportConfig == null) {
+      throw LinkingException('El QR no trae la configuración de Firebase.');
+    }
+    await _keyStore.setTransportConfig(
+      Map<String, dynamic>.from(transportConfig),
+    );
+
+    // Si viene la llave de CARTO, la guardamos en local
+    final cartoKey = payload['cartoKey'] as String?;
+    if (cartoKey != null && cartoKey.isNotEmpty) {
+      await _keyStore.setCartoKey(cartoKey);
+    }
 
     final identity = await ensureLocalIdentity();
 
@@ -202,7 +209,7 @@ class LinkingService {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // Aceptar / rechazar / expulsar
+  // Aceptar / rechazar / expulsar (sin cambios)
   // ══════════════════════════════════════════════════════════════════
 
   Future<GroupMember> acceptMember({
@@ -319,9 +326,6 @@ class LinkingService {
   // PIN de recuperación (factor B local)
   // ══════════════════════════════════════════════════════════════════
 
-  /// Calcula el `recoveryPinHash` a partir del PIN de la app y lo
-  /// guarda en el Keystore local. Devuelve el hash para que el
-  /// caller lo propague por sync a los demás miembros.
   Future<String> setLocalRecoveryPin(String pin) async {
     final myId = await _keyStore.getDeviceId();
     if (myId == null) throw LinkingException('Falta deviceId local');
@@ -336,9 +340,6 @@ class LinkingService {
     return hash;
   }
 
-  /// Borra el `recoveryPinHash` local (cuando el usuario quita su
-  /// PIN de la app). El caller debe propagar el cambio con un
-  /// `recoveryPinUpdate` con `recoveryPinHash: null`.
   Future<void> clearLocalRecoveryPin() async {
     final myId = await _keyStore.getDeviceId();
     if (myId == null) return;
