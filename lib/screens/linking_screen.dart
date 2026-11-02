@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/group_models.dart';
 import '../providers/linking_providers.dart';
 import '../providers/sync_providers.dart';
+import '../services/background_sync.dart';
 import '../services/invite_service.dart';
 import '../widgets/create_group_dialog.dart';
 import '../widgets/display_name_dialog.dart';
@@ -86,6 +88,16 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
         await HapticFeedback.mediumImpact();
       }
       ref.invalidate(groupSnapshotProvider);
+
+      // CLAVE: sin esto el host nunca abre el transporte ni escucha el
+      // buzón del QR (el SyncService arrancó "sin pareja").
+      try {
+        final sync = await ref.read(syncServiceProvider.future);
+        await sync.reloadPeers();
+        unawaited(BackgroundSyncService.bootstrap());
+      } catch (e) {
+        debugPrint('[LinkingScreen] No se pudo arrancar el sync: $e');
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
@@ -163,6 +175,15 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
           'No se pudo avisar al host. Revisa tu conexión y reintenta.',
         );
         return;
+      }
+
+      // El invitado debe quedar escuchando su inbox para recibir el
+      // memberAccept (ya tiene el secreto del host desde prepareJoin).
+      try {
+        await sync.reloadPeers();
+        unawaited(BackgroundSyncService.bootstrap());
+      } catch (e) {
+        debugPrint('[LinkingScreen] No se pudo arrancar el sync: $e');
       }
 
       await Navigator.of(context).push(
