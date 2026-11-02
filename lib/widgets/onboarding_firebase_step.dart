@@ -68,17 +68,22 @@ class _OnboardingFirebaseStepState
     });
   }
 
-  void _onCredentialsSaved() {
-    setState(() => _isSavingCredentials = false);
-    _goTo(_FirebaseSubStep.rules);
-  }
-
   Future<void> _handlePrimaryAction() async {
     if (_subStep == _FirebaseSubStep.credentials) {
       if (!_hasCredentialsText) return;
       
       setState(() => _isSavingCredentials = true);
-      _credentialsKey.currentState?.validateAndSave();
+      
+      // Esperamos el resultado. Si es true, ya avanzó (widget.onSaved se llama adentro).
+      // Si es false, hubo un error y debemos desbloquear el botón.
+      final success = await _credentialsKey.currentState?.validateAndSave() ?? false;
+      
+      if (!mounted) return;
+      if (!success) {
+        // Error: quitamos el spinner para que pueda corregir
+        setState(() => _isSavingCredentials = false);
+      }
+      // Si success es true, _onCredentialsSaved ya cambió de pantalla
       
     } else if (_subStep == _FirebaseSubStep.rules) {
       _goTo(_FirebaseSubStep.test);
@@ -88,6 +93,11 @@ class _OnboardingFirebaseStepState
         widget.onNext();
       }
     }
+  }
+
+  void _onCredentialsSaved() {
+    setState(() => _isSavingCredentials = false);
+    _goTo(_FirebaseSubStep.rules);
   }
 
   Future<void> _confirmSkipWithWarning() async {
@@ -132,7 +142,6 @@ class _OnboardingFirebaseStepState
       step: OnboardingStep.firebase,
       onSkip: _confirmSkipWithWarning,
       bottomAction: _buildBottomBar(scheme, theme),
-      // Quitamos el SingleChildScrollView interno para que el Scaffold maneje el scroll
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
