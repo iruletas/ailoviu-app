@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/group_models.dart';
@@ -61,7 +62,8 @@ class KeyStore {
           GroupMember.fromJson(Map<String, dynamic>.from(v as Map)),
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[KeyStore] Error leyendo members: $e');
       return {};
     }
   }
@@ -71,6 +73,21 @@ class KeyStore {
     return _storage.write(key: 'group.members', value: jsonEncode(json));
   }
 
+  // ── invites (host) ──────────────────────────────────────────────
+  //
+  // El host guarda el inviteToken activo para poder escuchar
+  // invites/{token}/requests con el transporte. Cada QR nuevo
+  // (al crear grupo o al regenerar) reemplaza este token.
+
+  Future<String?> getActiveInviteToken() =>
+      _storage.read(key: 'group.activeInviteToken');
+
+  Future<void> setActiveInviteToken(String token) =>
+      _storage.write(key: 'group.activeInviteToken', value: token);
+
+  Future<void> clearActiveInviteToken() =>
+      _storage.delete(key: 'group.activeInviteToken');
+
   // ── secrets (uno por peer) ─────────────────────────────────────
 
   Future<Map<String, String>> _getSecretsRaw() async {
@@ -78,7 +95,8 @@ class KeyStore {
     if (raw == null) return {};
     try {
       return Map<String, String>.from(jsonDecode(raw) as Map);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[KeyStore] Error leyendo secrets: $e');
       return {};
     }
   }
@@ -120,6 +138,7 @@ class KeyStore {
     await _storage.delete(key: 'group.recoveryQuestionHash');
     await _storage.delete(key: 'group.recoveryQuestionSalt');
     await _storage.delete(key: 'group.peerRecoveryPins');
+    await _storage.delete(key: 'group.activeInviteToken');
   }
 
   // ── recovery question ──────────────────────────────────────────
@@ -158,17 +177,14 @@ class KeyStore {
   }
 
   // ── peer recovery PINs ─────────────────────────────────────────
-  //
-  // Cada miembro guarda el `recoveryHash` de los demás para poder
-  // verificar su identidad en una recuperación (factor B).
-  // Se sincroniza cuando alguien cambia su PIN.
 
   Future<Map<String, String>> getPeerRecoveryPins() async {
     final raw = await _storage.read(key: 'group.peerRecoveryPins');
     if (raw == null) return {};
     try {
       return Map<String, String>.from(jsonDecode(raw) as Map);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[KeyStore] Error leyendo peerRecoveryPins: $e');
       return {};
     }
   }
@@ -201,7 +217,8 @@ class KeyStore {
     if (raw == null) return null;
     try {
       return jsonDecode(raw) as Map<String, dynamic>;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[KeyStore] Error leyendo transportConfig: $e');
       return null;
     }
   }
@@ -245,6 +262,15 @@ class KeyStore {
     return members.values.any(
       (m) => m.deviceId != myId && m.approved,
     );
+  }
+
+  /// `true` si soy el host y tengo un token activo para escuchar.
+  Future<bool> isHostWithActiveInvite() async {
+    final hostId = await getHostDeviceId();
+    final myId = await getDeviceId();
+    if (hostId == null || myId == null || hostId != myId) return false;
+    final token = await getActiveInviteToken();
+    return token != null && token.isNotEmpty;
   }
 
   Future<void> clearAll() => _storage.deleteAll();
