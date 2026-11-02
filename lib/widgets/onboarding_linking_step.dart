@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../providers/linking_providers.dart';
 import '../providers/onboarding_providers.dart';
 import '../providers/relationship_providers.dart';
 import '../providers/sync_providers.dart';
+import '../services/background_sync.dart';
 import '../services/invite_service.dart';
 import '../services/linking_service.dart';
 import 'onboarding_scaffold.dart';
@@ -77,6 +79,15 @@ class _OnboardingLinkingStepState
         _busy = false;
       });
       ref.invalidate(groupSnapshotProvider);
+
+      // CLAVE: arrancar el transporte del host para escuchar el QR.
+      try {
+        final sync = await ref.read(syncServiceProvider.future);
+        await sync.reloadPeers();
+        unawaited(BackgroundSyncService.bootstrap());
+      } catch (e) {
+        debugPrint('[OnboardingLinking] No se pudo arrancar el sync: $e');
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -144,6 +155,14 @@ class _OnboardingLinkingStepState
       if (!published) {
         setState(() => _error = 'No se pudo avisar al host. Revisa tu conexión.');
         return;
+      }
+
+      // El invitado queda escuchando su inbox para recibir memberAccept.
+      try {
+        await sync.reloadPeers();
+        unawaited(BackgroundSyncService.bootstrap());
+      } catch (e) {
+        debugPrint('[OnboardingLinking] No se pudo arrancar el sync: $e');
       }
 
       await Navigator.of(context).push(
