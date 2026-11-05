@@ -79,7 +79,6 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     }
 
     try {
-      // Leemos la relación para pasarla al QR.
       final rel = ref.read(relationshipProvider);
       final names = rel.visibleNames;
       final hostName = names.isNotEmpty ? names[0].trim() : '';
@@ -94,8 +93,6 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
         startDate: rel.startDate,
       );
 
-      // Si el host aún no tenía nombre en su relación, lo escribimos
-      // (para que su propio perfil y el mapa lo muestren).
       if (hostName.isEmpty) {
         await ref
             .read(relationshipProvider.notifier)
@@ -145,7 +142,6 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     try {
       final invite = GroupInvitePayload.fromQrString(scanned);
 
-      // Antes de preguntar el nombre, vemos si el QR ya lo trae.
       final inviteService = ref.read(inviteServiceProvider);
       final peek = await inviteService.peekRelationshipInfo(invite);
       if (!mounted) return;
@@ -154,10 +150,8 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
       String? chosenName;
 
       if (presetName.isNotEmpty) {
-        // El host ya escribió el nombre del partner: no preguntamos.
         chosenName = presetName;
       } else {
-        // No hay nombre en el QR: preguntamos.
         chosenName = await showGeneralDialog<String>(
           context: context,
           barrierDismissible: true,
@@ -196,7 +190,6 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
         displayName: chosenName,
       );
 
-      // Aplicamos nombres y fecha que vinieron en el QR.
       await _applyRelationshipFromInvite(prepared);
 
       final sync = await ref.read(syncServiceProvider.future);
@@ -240,7 +233,6 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     }
   }
 
-  /// Aplica nombres + fecha desde el QR. No-op si el QR no los traía.
   Future<void> _applyRelationshipFromInvite(PrepareJoinResult prepared) async {
     final hostName = prepared.hostDisplayName?.trim() ?? '';
     final partnerName = prepared.partnerDisplayName?.trim() ?? '';
@@ -446,6 +438,12 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     final approvedCount = members.where((m) => m.approved).length;
     final showPendingSection = group.isHost && pendingJoins.isNotEmpty;
 
+    // El botón "Mostrar QR" solo sirve para vincular al segundo
+    // miembro. Una vez que hay dos aprobados, se oculta. Para
+    // reemplazar un dispositivo perdido, el camino es "Recuperar
+    // cuenta".
+    final canInvite = group.isHost && approvedCount < 2;
+
     return [
       if (showPendingSection) ...[
         const SectionLabel('Solicitudes pendientes'),
@@ -502,7 +500,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
       ),
       const SizedBox(height: 16),
 
-      if (group.isHost) ...[
+      if (canInvite) ...[
         BentoCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
