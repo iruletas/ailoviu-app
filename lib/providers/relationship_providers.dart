@@ -58,11 +58,30 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
     }
   }
 
+  /// Aplica nombres y fecha en un solo golpe. Se usa cuando el guest
+  /// escanea el QR y recibe los datos del host, y cuando el host
+  /// confirma un `memberAccept` con los datos actualizados.
+  Future<void> setFromSync({
+    required List<String> partnerNames,
+    DateTime? startDate,
+  }) async {
+    state = AppRelationship(
+      partnerNames: partnerNames,
+      startDate: startDate,
+    );
+    await _persistNames();
+    final prefs = await _prefsFuture;
+    if (startDate == null) {
+      await prefs.remove(_kStartDate);
+    } else {
+      await prefs.setString(_kStartDate, startDate.toIso8601String());
+    }
+  }
+
   Future<void> clear() async {
     state = const AppRelationship();
     final prefs = await _prefsFuture;
     await prefs.remove(_kPartnerNames);
-    // Limpieza de la clave heredada del selector de tipo (ya no existe).
     await prefs.remove('relationship.type');
     await prefs.remove(_kStartDate);
   }
