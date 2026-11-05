@@ -66,11 +66,16 @@ class _OnboardingLinkingStepState
       _error = null;
     });
     try {
+      final partnerName =
+          rel.visibleNames.length > 1 ? rel.visibleNames[1].trim() : '';
+
       final linking = ref.read(linkingServiceProvider);
       final created = await linking.createGroup(
         displayName: form.name,
         recoveryQuestionPlain: form.question,
         recoveryAnswer: form.answer,
+        partnerDisplayName: partnerName.isNotEmpty ? partnerName : null,
+        startDate: rel.startDate,
       );
       if (!mounted) return;
       HapticFeedback.mediumImpact();
@@ -80,7 +85,6 @@ class _OnboardingLinkingStepState
       });
       ref.invalidate(groupSnapshotProvider);
 
-      // CLAVE: arrancar el transporte del host para escuchar el QR.
       try {
         final sync = await ref.read(syncServiceProvider.future);
         await sync.reloadPeers();
@@ -114,34 +118,104 @@ class _OnboardingLinkingStepState
 
     try {
       final invite = GroupInvitePayload.fromQrString(scanned);
-      
-      final profile = await showModalBottomSheet<({String name, String question, String answer})>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: _GroupFormSheet(
-            isGuest: true,
-            initialName: '',
-            suggestedQuestion: _suggestedQuestion,
-          ),
-        ),
-      );
-      
-      if (profile == null || !mounted) {
+
+      // Peek del QR: si ya trae el nombre del partner, no preguntamos.
+      final inviteService = ref.read(inviteServiceProvider);
+      final peek = await inviteService.peekRelationshipInfo(invite);
+      if (!mounted) {
         setState(() => _busy = false);
+        return;
+      }
+
+      final presetName = peek.partnerName?.trim() ?? '';
+      String? name;
+      String question = '';
+      String answer = '';
+
+      if (presetName.isNotEmpty) {
+        name = presetName;
+        // Pregunta de recuperación: la del QR.
+        question = invite.recoveryQuestionPlain ?? _suggestedQuestion;
+        // La respuesta la tiene que poner el usuario (no viene en el QR
+        // por seguridad). La pedimos con el mismo sheet de antes.
+        final profile = await showModalBottomSheet<
+            ({String name, String question, String answer})>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: _GroupFormSheet(
+              isGuest: true,
+              initialName: presetName,
+              suggestedQuestion: question,
+            ),
+          ),
+        );
+        if (profile == null || !mounted) {
+          setState(() => _busy = false);
+          return;
+        }
+        answer = profile.answer;
+        question = profile.question;
+        name = profile.name.trim().isEmpty ? presetName : profile.name;
+      } else {
+        // No hay nombre en el QR: pedimos todo.
+        final profile = await showModalBottomSheet<
+            ({String name, String question, String answer})>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: _GroupFormSheet(
+              isGuest: true,
+              initialName: '',
+              suggestedQuestion: invite.recoveryQuestionPlain ??
+                  _suggestedQuestion,
+            ),
+          ),
+        );
+        if (profile == null || !mounted) {
+          setState(() => _busy = false);
+          return;
+        }
+        name = profile.name;
+        question = profile.question;
+        answer = profile.answer;
+      }
+
+      if (name == null || name.trim().isEmpty) {
+        setState(() {
+          _busy = false;
+          _error = 'Necesitamos tu nombre para continuar.';
+        });
         return;
       }
 
       final linking = ref.read(linkingServiceProvider);
       final prepared = await linking.prepareJoin(
         invite: invite,
-        displayName: profile.name,
+        displayName: name,
       );
+
+      // Aplicar relación desde el QR.
+      final hostName = prepared.hostDisplayName?.trim() ?? '';
+      final partnerName = prepared.partnerDisplayName?.trim() ?? '';
+      if (hostName.isNotEmpty ||
+          partnerName.isNotEmpty ||
+          prepared.startDate != null) {
+        await ref.read(relationshipProvider.notifier).setFromSync(
+              partnerNames: [hostName, partnerName],
+              startDate: prepared.startDate,
+            );
+      }
 
       final sync = await ref.read(syncServiceProvider.future);
       final published = await sync.publishInvite(
@@ -157,7 +231,6 @@ class _OnboardingLinkingStepState
         return;
       }
 
-      // El invitado queda escuchando su inbox para recibir memberAccept.
       try {
         await sync.reloadPeers();
         unawaited(BackgroundSyncService.bootstrap());
@@ -168,7 +241,7 @@ class _OnboardingLinkingStepState
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const WaitingApprovalScreen()),
       );
-      
+
       if (mounted) widget.onFinish();
     } on InviteException catch (e) {
       if (mounted) {
@@ -313,7 +386,6 @@ class _OnboardingLinkingStepState
     final hasInvite = _invite != null;
     final isGuest = widget.isGuestFlow;
 
-    // La etiqueta del botón principal ya no depende de un selector de rol
     String primaryLabel;
     VoidCallback onPrimary;
     bool showPrimary = true;
@@ -355,7 +427,7 @@ class _OnboardingLinkingStepState
           ),
           const SizedBox(height: 6),
           Text(
-            isGuest 
+            isGuest
                 ? 'Pídele a tu amor que te muestre el código QR desde su pantalla.'
                 : 'Cuando abran Ailoviu en su celular, verán el mismo espacio que tú.',
             style: theme.textTheme.bodyMedium?.copyWith(
@@ -377,8 +449,8 @@ class _OnboardingLinkingStepState
               return FadeTransition(
                 opacity: curved,
                 child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.94, end: 1.0)
-                      .animate(curved),
+                  scale:
+                      Tween<double>(begin: 0.94, end: 1.0).animate(curved),
                   child: child,
                 ),
               );
@@ -388,7 +460,7 @@ class _OnboardingLinkingStepState
                     key: const ValueKey('qr'),
                     invite: _invite!,
                   )
-                : (isGuest 
+                : (isGuest
                     ? const _GuestExplanationCard(key: ValueKey('guest_expl'))
                     : const _ExplanationCard(key: ValueKey('explanation'))),
           ),
@@ -838,7 +910,6 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
               label: 'Respuesta',
               hint: 'Algo que recuerdes bien',
               controller: _answerCtrl,
-              // Sin restricciones de caracteres, acepta todo
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 20),
