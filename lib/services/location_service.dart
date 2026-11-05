@@ -30,33 +30,27 @@ class LocationAttempt {
 /// Servicio de ubicación.
 ///
 /// - [ensurePermission]: chequea y pide permisos si es necesario.
-/// - [getCurrentLocation]: obtiene la ubicación ahora (puede aceptar caché).
-/// - [getFreshLocation]: obtiene una ubicación fresca, rechazando caché vieja.
+/// - [getCurrentLocation]: obtiene la ubicación ahora (acepta caché).
+/// - [getFreshLocation]: cascada medium → high → last-known. Diseñada
+///   para funcionar en dispositivos sin GPS (tablets, emuladores) que
+///   sólo tienen WiFi/cell.
 /// - [distanceKmBetween]: distancia en km entre dos coordenadas.
-///
-/// El envío por sync de las ubicaciones NO se hace aquí: eso lo hace
-/// `LocationsNotifier` cuando recibe cada nueva ubicación.
 class LocationService {
   LocationService();
 
-  /// Edad máxima aceptable para considerar una posición "fresca".
-  /// Si el OS devuelve una posición más vieja que esto, se descarta.
-  static const Duration maxStaleAge = Duration(minutes: 2);
-
-  /// Timeout para [getFreshLocation]. Alto porque con `high` y GPS
-  /// frío el primer fix puede tardar.
-  static const Duration freshTimeout = Duration(seconds: 30);
-
-  /// Asegura que haya permiso de ubicación concedido.
+  /// Antigüedad máxima aceptable para considerar una posición "fresca".
   ///
-  /// Reglas:
-  /// - Si el servicio de ubicación del sistema está apagado, retorna
-  ///   [LocationResult.serviceDisabled].
-  /// - Si ya hay permiso `whileInUse` o `always`, retorna
-  ///   [LocationResult.success] **sin volver a pedir** (evita el bug
-  ///   de Android que devuelve `denied` al re-pedir un permiso ya
-  ///   concedido).
-  /// - Si no hay permiso, lo pide una vez.
+  /// 10 minutos porque en tablets el SO cachea la posición WiFi y no la
+  /// actualiza hasta que alguien la pide. Rechazar todo lo que pase de
+  /// 2 min deja a la tablet sin ubicación para siempre.
+  static const Duration maxStaleAge = Duration(minutes: 10);
+
+  /// Timeout por intento de la cascada. 15s es suficiente para un fix
+  /// WiFi; si no, pasamos al siguiente método.
+  static const Duration freshTimeout = Duration(seconds: 15);
+
+  // ── Permisos ────────────────────────────────────────────────────────
+
   Future<LocationResult> ensurePermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -88,28 +82,21 @@ class LocationService {
     return LocationResult.permissionDenied;
   }
 
-  /// `true` si el servicio de ubicación del sistema está encendido.
   Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();
 
-  /// `true` si hay permiso de foreground (o background).
   Future<bool> hasPermission() async {
     final permission = await Geolocator.checkPermission();
     return permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse;
   }
 
-  /// `true` si hay permiso de background (always).
   Future<bool> hasBackgroundPermission() async {
     final permission = await Geolocator.checkPermission();
     return permission == LocationPermission.always;
   }
 
-  /// Obtiene la ubicación actual.
-  ///
-  /// No pide permisos: el caller debe haber llamado [ensurePermission]
-  /// antes. Puede devolver una posición cacheada del OS (no valida
-  /// [PartnerLocation.capturedAt]). Para uso "fresco", usar
-  /// [getFreshLocation].
+  // ── Obtención de posición ───────────────────────────────────────────
+
   Future<LocationAttempt> getCurrentLocation({
     required String deviceId,
     Duration timeout = const Duration(seconds: 15),
@@ -137,14 +124,17 @@ class LocationService {
     }
   }
 
-  /// Obtiene una ubicación "fresca" para publicar en el mapa.
+  /// Obtiene una ubicación utilizable, con cascada de tres pasos:
   ///
-  /// A diferencia de [getCurrentLocation], esta variante:
-  /// - Usa `LocationAccuracy.high`.
-  /// - Da más tiempo (30s) para que el GPS tenga chance de un fix real.
-  /// - **Rechaza** posiciones cuyo `timestamp` sea más viejo que
-  ///   [maxStaleAge], devolviendo [LocationResult.stale]. Así nunca
-  ///   publicamos caché del OS como si fuera nueva.
+  /// 1. **medium** (WiFi/cell). Rápido, confiable en cualquier
+  ///    dispositivo, incluidos tablets sin GPS. Es el caballo de
+  ///    batalla.
+  /// 2. **high** (GPS). Más preciso, sólo si el paso 1 falló. En
+  ///    tablets sin GPS va a fallar de nuevo, pero no cuesta nada
+  ///    intentarlo antes de rendirse.
+  /// 3. **getLastKnownPosition**. Lo último que el SO tenga cacheado.
+  ///    Puede estar viejo, pero es mejor que nada. Se marca como
+  ///    exitoso porque el mapa puede mostrarlo sin problemas.
   ///
   /// No pide permisos: el caller debe haber llamado [ensurePermission]
   /// antes.
@@ -152,17 +142,48 @@ class LocationService {
     required String deviceId,
     Duration timeout = freshTimeout,
   }) async {
+    // 1. Medium: rápido, confiable.
+    final medium = await _tryPosition(
+      deviceId: deviceId,
+      accuracy: LocationAccuracy.medium,
+      timeout: timeout,
+      requireFresh: true,
+    );
+    if (medium != null) return medium;
+
+    // 2. High: GPS, por si el usuario está al aire libre.
+    final high = await _tryPosition(
+      deviceId: deviceId,
+      accuracy: LocationAccuracy.high,
+      timeout: const Duration(seconds: 10),
+      requireFresh: true,
+    );
+    if (high != null) return high;
+
+    // 3. Last known: lo último que el SO recuerde.
+    final last = await _lastKnown(deviceId: deviceId);
+    if (last != null) return last;
+
+    return const LocationAttempt(result: LocationResult.timeout);
+  }
+
+  Future<LocationAttempt?> _tryPosition({
+    required String deviceId,
+    required LocationAccuracy accuracy,
+    required Duration timeout,
+    required bool requireFresh,
+  }) async {
     try {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: accuracy,
           timeLimit: timeout,
         ),
       );
 
-      final age = DateTime.now().difference(position.timestamp);
-      if (age > maxStaleAge) {
-        return const LocationAttempt(result: LocationResult.stale);
+      if (requireFresh) {
+        final age = DateTime.now().difference(position.timestamp);
+        if (age > maxStaleAge) return null;
       }
 
       return LocationAttempt(
@@ -174,19 +195,31 @@ class LocationService {
           capturedAt: position.timestamp,
         ),
       );
-    } on TimeoutException {
-      return const LocationAttempt(result: LocationResult.timeout);
     } catch (_) {
-      return const LocationAttempt(result: LocationResult.error);
+      return null;
     }
   }
 
-  /// Stream de ubicaciones en background.
-  ///
-  /// Frecuencia moderada (cada 5 min o 100 m de movimiento): el mapa
-  /// no necesita más precisión y ahorramos batería.
-  ///
-  /// Requiere permiso de background concedido.
+  Future<LocationAttempt?> _lastKnown({required String deviceId}) async {
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last == null) return null;
+      return LocationAttempt(
+        result: LocationResult.success,
+        location: PartnerLocation(
+          deviceId: deviceId,
+          latitude: last.latitude,
+          longitude: last.longitude,
+          capturedAt: last.timestamp,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Background ──────────────────────────────────────────────────────
+
   Stream<PartnerLocation> backgroundUpdates({
     required String deviceId,
   }) async* {
@@ -217,7 +250,8 @@ class LocationService {
     }
   }
 
-  /// Distancia en km entre dos coordenadas.
+  // ── Util ────────────────────────────────────────────────────────────
+
   double distanceKmBetween({
     required double lat1,
     required double lon1,
@@ -228,9 +262,7 @@ class LocationService {
     return meters / 1000.0;
   }
 
-  /// Abre los ajustes del sistema para conceder permisos manualmente.
   Future<bool> openAppSettings() => Geolocator.openAppSettings();
 
-  /// Abre los ajustes de ubicación del sistema.
   Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
 }
