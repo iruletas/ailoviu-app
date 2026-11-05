@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../services/invite_service.dart';
 
+/// Tarjeta que muestra el QR de vinculación.
+///
+/// El QR solo lo puede leer la cámara de Ailoviu. Copiarlo como texto
+/// no serviría: el guest no tiene dónde pegarlo. Por eso ya no hay
+/// botón de "copiar".
 class QrInviteCard extends StatelessWidget {
   final GroupInvitePayload invite;
   const QrInviteCard({super.key, required this.invite});
@@ -25,34 +29,11 @@ class QrInviteCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Escanea para unirte',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              IconButton.filledTonal(
-                onPressed: () async {
-                  await HapticFeedback.lightImpact();
-                  Clipboard.setData(
-                    ClipboardData(text: invite.encodeForQr()),
-                  );
-                  if (context.mounted) {
-                    _showCopiedToast(context);
-                  }
-                },
-                icon: const Icon(Icons.copy_rounded, size: 18),
-                style: IconButton.styleFrom(
-                  backgroundColor: scheme.secondaryContainer,
-                  foregroundColor: scheme.onSecondaryContainer,
-                ),
-                tooltip: 'Copiar como texto',
-              ),
-            ],
+          Text(
+            'Escanea para unirte',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 18),
           Center(
@@ -68,10 +49,7 @@ class QrInviteCard extends StatelessWidget {
                     offset: const Offset(0, 4),
                   ),
                 ],
-                border: Border.all(
-                  color: Colors.white,
-                  width: 1.5,
-                ),
+                border: Border.all(color: Colors.white, width: 1.5),
               ),
               child: QrImageView(
                 data: invite.encodeForQr(),
@@ -120,51 +98,18 @@ class QrInviteCard extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  static void _showCopiedToast(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        duration: const Duration(seconds: 2),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        content: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHigh.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.3),
+          const SizedBox(height: 12),
+          Text(
+            'Este QR solo se puede leer desde la app de Ailoviu. '
+            'Ábrela en el otro celular, toca "Escanear QR" y apunta la '
+            'cámara aquí.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.4,
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.check_circle_rounded,
-                size: 18,
-                color: scheme.primary,
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  'QR copiado al portapapeles',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
