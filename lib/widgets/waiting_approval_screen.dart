@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class WaitingApprovalScreen extends StatefulWidget {
+import '../providers/home_providers.dart';
+import '../providers/sync_providers.dart';
+
+class WaitingApprovalScreen extends ConsumerStatefulWidget {
   const WaitingApprovalScreen({super.key});
 
   @override
-  State<WaitingApprovalScreen> createState() => _WaitingApprovalScreenState();
+  ConsumerState<WaitingApprovalScreen> createState() =>
+      _WaitingApprovalScreenState();
 }
 
-class _WaitingApprovalScreenState extends State<WaitingApprovalScreen>
+class _WaitingApprovalScreenState extends ConsumerState<WaitingApprovalScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _radarController;
+  bool _popped = false;
 
   @override
   void initState() {
@@ -18,6 +24,9 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen>
       vsync: this,
       duration: const Duration(milliseconds: 2400),
     )..repeat();
+
+    // Revisión inicial por si ya está aprobado cuando entra.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkApproved());
   }
 
   @override
@@ -26,10 +35,39 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen>
     super.dispose();
   }
 
+  /// Cierra la pantalla si el guest ya fue aprobado.
+  void _checkApproved() {
+    if (!mounted || _popped) return;
+    final myId = ref.read(myDeviceIdProvider).valueOrNull ?? '';
+    final group = ref.read(groupSnapshotProvider).valueOrNull;
+    if (group == null || myId.isEmpty) return;
+    final me = group.members[myId];
+    if (me != null && me.approved) {
+      _popped = true;
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
+
+    final myId = ref.watch(myDeviceIdProvider).valueOrNull ?? '';
+
+    // Escucha cambios en el snapshot. Cuando el host aprueba, el
+    // SyncRouter invalida el provider, llega un valor nuevo con
+    // me.approved = true, y esta pantalla se cierra sola.
+    ref.listen(groupSnapshotProvider, (prev, next) {
+      if (_popped) return;
+      final group = next.valueOrNull;
+      if (group == null || myId.isEmpty) return;
+      final me = group.members[myId];
+      if (me != null && me.approved) {
+        _popped = true;
+        if (mounted) Navigator.of(context).pop();
+      }
+    });
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -81,8 +119,8 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Tu amor tiene que aprobar tu '
-                  'entrada. Te avisaremos en cuanto esté listo.',
+                  'Tu amor tiene que aprobar tu entrada. '
+                  'En cuanto lo haga, esta pantalla se cierra sola.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
