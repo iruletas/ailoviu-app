@@ -26,12 +26,12 @@ class SyncRouter {
     _sub = _ref.read(syncEventsProvider.stream).listen(_onEvent);
 
     _inviteSub?.cancel();
-    // Nos suscribimos al stream de invitaciones (solo host lo emitirá)
+    // Nos suscribimos al stream de invitaciones (solo host lo emitirá).
     final syncService = _ref.read(syncServiceProvider).valueOrNull;
     if (syncService != null) {
       _inviteSub = syncService.inviteRequests.listen(_onInviteRequest);
     } else {
-      // Si el service aún no está listo, esperamos a que lo esté
+      // Si el service aún no está listo, esperamos a que lo esté.
       _ref.read(syncServiceProvider.future).then((service) {
         _inviteSub?.cancel();
         _inviteSub = service.inviteRequests.listen(_onInviteRequest);
@@ -91,7 +91,9 @@ class SyncRouter {
           break;
       }
     } catch (e) {
-      debugPrint('[SyncRouter] Error en _onEvent (${event.envelope.type.name}): $e');
+      debugPrint(
+        '[SyncRouter] Error en _onEvent (${event.envelope.type.name}): $e',
+      );
     }
   }
 
@@ -100,13 +102,26 @@ class SyncRouter {
   Future<void> _onInviteRequest(InviteRequest request) async {
     try {
       // Si ya la tenemos pendiente, no hacemos nada.
-      if (_ref.read(pendingJoinsProvider).containsKey(request.guestDeviceId)) {
+      if (_ref
+          .read(pendingJoinsProvider)
+          .containsKey(request.guestDeviceId)) {
+        debugPrint(
+          '[SyncRouter] Invite duplicado de ${request.guestDeviceId}, '
+          'ignorado.',
+        );
         return;
       }
 
-      // Validamos el proof
-      final token = await _ref.read(keyStoreProvider).getActiveInviteToken();
-      if (token == null) return;
+      // Validamos el proof.
+      final token =
+          await _ref.read(keyStoreProvider).getActiveInviteToken();
+      if (token == null) {
+        debugPrint(
+          '[SyncRouter] Llegó invite de ${request.displayName} pero '
+          'no hay token activo. Ignorado.',
+        );
+        return;
+      }
 
       final inviteService = _ref.read(inviteServiceProvider);
       final isValid = inviteService.verifyProof(
@@ -116,19 +131,27 @@ class SyncRouter {
       );
 
       if (!isValid) {
-        debugPrint('[SyncRouter] Proof inválido para ${request.guestDeviceId}');
+        debugPrint(
+          '[SyncRouter] Proof inválido para ${request.guestDeviceId}',
+        );
         return;
       }
 
-      // Agregamos al provider para que aparezca la tarjeta
+      debugPrint(
+        '[SyncRouter] Invite válido de ${request.displayName} '
+        '(${request.guestDeviceId}), sumando a pendingJoins.',
+      );
+
+      // Agregamos al provider para que aparezca la tarjeta.
       _ref.read(pendingJoinsProvider.notifier).add(request);
 
-      // Notificación local
+      // Notificación local.
       await _notifications.show(
         title: 'Nueva solicitud',
         body: '${request.displayName} quiere unirse a tu relación.',
         id: NotificationService.stableId(
-            'join_${request.guestDeviceId}_${request.createdAt}'),
+          'join_${request.guestDeviceId}_${request.createdAt}',
+        ),
       );
     } catch (e) {
       debugPrint('[SyncRouter] Error procesando invite request: $e');
@@ -144,6 +167,7 @@ class SyncRouter {
       Map<String, dynamic>.from(memberJson),
     );
     await _ref.read(linkingServiceProvider).acceptMember(newMember: member);
+    _ref.invalidate(groupSnapshotProvider);
     await _reloadSync();
   }
 
@@ -151,6 +175,7 @@ class SyncRouter {
     final deviceId = event.payload.data['deviceId'] as String?;
     if (deviceId == null) return;
     await _ref.read(linkingServiceProvider).removeMember(deviceId);
+    _ref.invalidate(groupSnapshotProvider);
     await _reloadSync();
   }
 
@@ -160,6 +185,7 @@ class SyncRouter {
     await _ref.read(keyStoreProvider).setTransportConfig(
           Map<String, dynamic>.from(config),
         );
+    _ref.invalidate(transportConfigProvider);
     await _reloadSync();
   }
 
@@ -196,12 +222,13 @@ class SyncRouter {
 
     if (!await _amIHost()) return;
 
-    if (_ref.read(pendingJoinsProvider.notifier).hasAnyRejection(guestDeviceId)) {
+    if (_ref
+        .read(pendingJoinsProvider.notifier)
+        .hasAnyRejection(guestDeviceId)) {
       await _rejectJoin(guestDeviceId);
       return;
     }
 
-    // Si estoy solo (2 personas), el voto del host es suficiente.
     final group = await _ref.read(linkingServiceProvider).snapshot();
     final expected = group.approvedPeerDeviceIds;
     final isSoloHost = expected.isEmpty;
@@ -221,7 +248,7 @@ class SyncRouter {
     final group = await _ref.read(linkingServiceProvider).snapshot();
     if (!group.isHost) return;
     if (group.approvedPeerDeviceIds.isNotEmpty) {
-      // Hay más miembros, hay que votar
+      // Hay más miembros, hay que votar.
       return;
     }
     await _approveMember(guestDeviceId, group);
@@ -247,16 +274,21 @@ class SyncRouter {
 
     // 1. Guardamos al miembro y su secreto ANTES de enviar memberAccept,
     //    para que el sobre tenga a quién ir.
-    await _ref.read(linkingServiceProvider).acceptMember(newMember: newMember);
+    await _ref
+        .read(linkingServiceProvider)
+        .acceptMember(newMember: newMember);
+    _ref.invalidate(groupSnapshotProvider);
     await _reloadSync();
 
     // 2. Mandamos memberAccept al invitado con la lista actualizada.
-    final updatedGroup = await _ref.read(linkingServiceProvider).snapshot();
+    final updatedGroup =
+        await _ref.read(linkingServiceProvider).snapshot();
     final sync = await _ref.read(syncServiceProvider.future);
     await sync.enqueue(
       type: SyncType.memberAccept,
       payload: {
-        'members': updatedGroup.members.values.map((m) => m.toJson()).toList(),
+        'members':
+            updatedGroup.members.values.map((m) => m.toJson()).toList(),
       },
       to: request.guestDeviceId,
     );
@@ -275,11 +307,13 @@ class SyncRouter {
 
     // 4. Limpiamos el token activo y el buzón del invite.
     await _ref.read(keyStoreProvider).clearActiveInviteToken();
+    _ref.invalidate(groupSnapshotProvider);
     await _reloadSync();
   }
 
   Future<void> _rejectJoin(String guestDeviceId) async {
-    final request = _ref.read(pendingJoinsProvider)[guestDeviceId]?.request;
+    final request =
+        _ref.read(pendingJoinsProvider)[guestDeviceId]?.request;
     _ref.read(pendingJoinsProvider.notifier).remove(guestDeviceId);
     if (request == null) return;
     try {
@@ -301,8 +335,11 @@ class SyncRouter {
       final m = GroupMember.fromJson(
         Map<String, dynamic>.from(raw as Map),
       );
-      await _ref.read(linkingServiceProvider).acceptMember(newMember: m);
+      await _ref
+          .read(linkingServiceProvider)
+          .acceptMember(newMember: m);
     }
+    _ref.invalidate(groupSnapshotProvider);
     await _reloadSync();
     _ref.read(pendingJoinsProvider.notifier).clearAll();
   }
@@ -311,7 +348,7 @@ class SyncRouter {
     _ref.read(pendingJoinsProvider.notifier).clearAll();
   }
 
-  // ── Recuperación (sin cambios de fondo) ─────────────────────────
+  // ── Recuperación ────────────────────────────────────────────────
 
   Future<void> _handleRecoveryRequest(SyncEvent event) async {
     final request = _decodeInviteRequest(event.payload.data);
@@ -367,14 +404,16 @@ class SyncRouter {
         _ref.read(pendingRecoveriesProvider)[guestDeviceId]?.request;
     if (request == null || request.recoveryOldDeviceId == null) return;
 
-    final newMember = await _ref.read(recoveryServiceProvider).promoteRecovery(
-          oldDeviceId: request.recoveryOldDeviceId!,
-          newDeviceId: request.guestDeviceId,
-          newDevicePublicKeyBase64: request.guestPublicKeyBase64,
-          displayName: request.displayName,
-          newRecoveryPinHash: request.recoveryPinHash,
-        );
+    final newMember =
+        await _ref.read(recoveryServiceProvider).promoteRecovery(
+              oldDeviceId: request.recoveryOldDeviceId!,
+              newDeviceId: request.guestDeviceId,
+              newDevicePublicKeyBase64: request.guestPublicKeyBase64,
+              displayName: request.displayName,
+              newRecoveryPinHash: request.recoveryPinHash,
+            );
 
+    _ref.invalidate(groupSnapshotProvider);
     await _reloadSync();
 
     final sync = await _ref.read(syncServiceProvider.future);
@@ -418,6 +457,7 @@ class SyncRouter {
           displayName: newMember.displayName ?? '',
           newRecoveryPinHash: newMember.recoveryPinHash,
         );
+    _ref.invalidate(groupSnapshotProvider);
     await _reloadSync();
     _ref.read(pendingRecoveriesProvider.notifier).clearAll();
   }
