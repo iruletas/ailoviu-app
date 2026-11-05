@@ -63,6 +63,8 @@ class LinkingService {
     required String displayName,
     required String recoveryQuestionPlain,
     required String recoveryAnswer,
+    String? partnerDisplayName,
+    DateTime? startDate,
     Duration inviteTtl = const Duration(minutes: 10),
   }) async {
     final existingGroupId = await _keyStore.getGroupId();
@@ -109,7 +111,6 @@ class LinkingService {
     );
     await _keyStore.setGroupMembers({identity.deviceId: me});
 
-    // Leemos la llave de CARTO (si existe) para empaquetarla en el QR
     final cartoKey = await _keyStore.getCartoKey();
 
     final invite = await _invites.createJoinInvite(
@@ -119,11 +120,12 @@ class LinkingService {
       transportConfig: transportConfig,
       recoveryQuestionPlain: question.questionPlain,
       cartoKey: cartoKey,
+      hostDisplayName: displayName,
+      partnerDisplayName: partnerDisplayName,
+      startDateIso: startDate?.toIso8601String(),
       ttl: inviteTtl,
     );
 
-    // IMPORTANTE: Guardamos el token del invite para que el host
-    // empiece a escuchar solicitudes en invites/{token}/requests.
     await _keyStore.setActiveInviteToken(invite.inviteToken);
 
     return CreateGroupResult(
@@ -159,9 +161,9 @@ class LinkingService {
       }
     }
 
-    // Desciframos el paquete (transportConfig + cartoKey)
+    // Desciframos el paquete (transportConfig + cartoKey + relación).
     final payload = await _invites.decryptInvitePayload(invite);
-    
+
     final transportConfig = payload['transportConfig'] as Map?;
     if (transportConfig == null) {
       throw LinkingException('El QR no trae la configuración de Firebase.');
@@ -175,26 +177,36 @@ class LinkingService {
       await _keyStore.setCartoKey(cartoKey);
     }
 
+    // Datos de relación del payload (pueden faltar en QRs viejos).
+    final hostDisplayName = payload['hostDisplayName'] as String?;
+    final partnerDisplayName = payload['partnerDisplayName'] as String?;
+    final startIso = payload['startDateIso'] as String?;
+    final startDate = startIso != null ? DateTime.tryParse(startIso) : null;
+
     final identity = await ensureLocalIdentity();
 
     await _keyStore.setGroupId(invite.groupId);
     await _keyStore.setHostDeviceId(invite.hostDeviceId);
 
+    // Si el host ya puso el nombre del partner en el QR y el guest no
+    // escribió uno, usamos el del QR. Así no queda vacío.
+    final effectiveName = displayName.trim().isEmpty
+        ? (partnerDisplayName?.trim() ?? '')
+        : displayName.trim();
+
     final me = GroupMember(
       deviceId: identity.deviceId,
       publicKeyBase64: identity.publicKeyBase64,
-      displayName: displayName.trim(),
+      displayName: effectiveName.isEmpty ? null : effectiveName,
       isHost: false,
       joinedAt: DateTime.now(),
       approved: false,
     );
-    
-    // Guardamos al host como miembro (pendiente) y derivamos su secreto
-    // de inmediato, para poder descifrar el memberAccept cuando llegue.
+
     final hostMember = GroupMember(
       deviceId: invite.hostDeviceId,
       publicKeyBase64: invite.hostPublicKeyBase64,
-      displayName: null,
+      displayName: hostDisplayName,
       isHost: true,
       joinedAt: DateTime.now(),
       approved: true,
@@ -205,7 +217,7 @@ class LinkingService {
     members[invite.hostDeviceId] = hostMember;
     await _keyStore.setGroupMembers(members);
 
-    // Derivar y guardar el secreto compartido con el host
+    // Derivar y guardar el secreto compartido con el host.
     final myPrivateKey = await _keyStore.getIdentityPrivateKey();
     if (myPrivateKey != null) {
       try {
@@ -235,6 +247,9 @@ class LinkingService {
     return PrepareJoinResult(
       inviteToken: invite.inviteToken,
       request: request,
+      hostDisplayName: hostDisplayName,
+      partnerDisplayName: partnerDisplayName,
+      startDate: startDate,
     );
   }
 
@@ -405,9 +420,18 @@ class PrepareJoinResult {
   final String inviteToken;
   final InviteRequest request;
 
+  /// Datos de la relación que venían en el QR. Pueden ser null si el
+  /// QR es viejo o si el host no los puso.
+  final String? hostDisplayName;
+  final String? partnerDisplayName;
+  final DateTime? startDate;
+
   const PrepareJoinResult({
     required this.inviteToken,
     required this.request,
+    this.hostDisplayName,
+    this.partnerDisplayName,
+    this.startDate,
   });
 }
 
