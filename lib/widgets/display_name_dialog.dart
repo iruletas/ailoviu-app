@@ -66,7 +66,7 @@ class _DisplayNameDialogState extends State<DisplayNameDialog> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Se mostrará a los demás miembros del grupo.',
+                  'Así te verá tu amor.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,

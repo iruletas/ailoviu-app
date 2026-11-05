@@ -146,7 +146,7 @@ class _PendingJoinCardState extends ConsumerState<PendingJoinCard>
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
-                  customText ?? 'Voto registrado · Esperando unanimidad del grupo',
+                  customText ?? 'Voto registrado · Esperando la aprobación',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontWeight: FontWeight.w600,

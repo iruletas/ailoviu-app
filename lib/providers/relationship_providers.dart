@@ -8,7 +8,6 @@ export '../models/relationship_models.dart';
 
 // ── Claves (prefijo relationship.) ────────────────────────────────────────
 const _kPartnerNames = 'relationship.partnerNames';
-const _kType = 'relationship.type';
 const _kStartDate = 'relationship.startDate';
 
 class RelationshipNotifier extends StateNotifier<AppRelationship> {
@@ -22,20 +21,11 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
     final prefs = await _prefsFuture;
 
     final names = prefs.getStringList(_kPartnerNames);
-    final typeStr = prefs.getString(_kType);
     final startIso = prefs.getString(_kStartDate);
 
     state = AppRelationship(
       partnerNames: names ?? const ['', ''],
-      type: _parseType(typeStr),
       startDate: startIso != null ? DateTime.tryParse(startIso) : null,
-    );
-  }
-
-  static RelationshipType _parseType(String? s) {
-    return RelationshipType.values.firstWhere(
-      (t) => t.name == s,
-      orElse: () => RelationshipType.hetero,
     );
   }
 
@@ -55,25 +45,9 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
     await _persistNames();
   }
 
-  Future<void> setType(RelationshipType type) async {
-    final updatedNames = List<String>.from(state.partnerNames);
-    if (type.allowsThirdMember && updatedNames.length < 3) {
-      updatedNames.add('');
-    }
-    state = AppRelationship(
-      partnerNames: updatedNames,
-      type: type,
-      startDate: state.startDate,
-    );
-    final prefs = await _prefsFuture;
-    await prefs.setString(_kType, type.name);
-    await _persistNames();
-  }
-
   Future<void> setStartDate(DateTime? date) async {
     state = AppRelationship(
       partnerNames: state.partnerNames,
-      type: state.type,
       startDate: date,
     );
     final prefs = await _prefsFuture;
@@ -88,7 +62,8 @@ class RelationshipNotifier extends StateNotifier<AppRelationship> {
     state = const AppRelationship();
     final prefs = await _prefsFuture;
     await prefs.remove(_kPartnerNames);
-    await prefs.remove(_kType);
+    // Limpieza de la clave heredada del selector de tipo (ya no existe).
+    await prefs.remove('relationship.type');
     await prefs.remove(_kStartDate);
   }
 }

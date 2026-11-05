@@ -12,10 +12,10 @@ class OnboardingScaffold extends StatelessWidget {
   final Widget? bottomAction;
   
   /// El índice visual (1-based). Si es null, se calcula del `step`.
-  /// Lo usamos para que el paso 0 (Rol) se vea como "Paso 1".
+  /// Útil para flujos con menos pasos (p. ej. quien solo escanea un QR).
   final int? customStepNumber;
   
-  /// El total visual. Si es null, se calcula como 6.
+  /// El total visual. Si es null, se usa 5.
   final int? customTotalSteps;
 
   const OnboardingScaffold({
@@ -35,9 +35,9 @@ class OnboardingScaffold extends StatelessWidget {
     final theme = Theme.of(context);
 
     // Si no nos pasan un número custom, calculamos el estándar.
-    // welcome=1, role=2, relationship=3, map=4, firebase=5, linking=6
+    // welcome=1, relationship=2, map=3, firebase=4, linking=5
     final currentStep = customStepNumber ?? (step.position + 1);
-    final totalSteps = customTotalSteps ?? 6;
+    final totalSteps = customTotalSteps ?? 5;
 
     return Scaffold(
       backgroundColor: scheme.surface,

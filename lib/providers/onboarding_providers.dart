@@ -8,7 +8,6 @@ const _kCompletedAt = 'onboarding.completedAt';
 const _kLastStep = 'onboarding.lastStep';
 
 enum OnboardingStep {
-  role,
   welcome,
   relationship,
   map,
@@ -19,7 +18,7 @@ enum OnboardingStep {
 
   static OnboardingStep fromIndex(int i) {
     if (i < 0 || i >= OnboardingStep.values.length) {
-      return OnboardingStep.role;
+      return OnboardingStep.welcome;
     }
     return OnboardingStep.values[i];
   }
@@ -34,7 +33,7 @@ class OnboardingState {
   const OnboardingState({
     this.completed = false,
     this.completedAt,
-    this.lastStep = OnboardingStep.role,
+    this.lastStep = OnboardingStep.welcome,
     this.loaded = false,
   });
 
@@ -97,7 +96,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   Future<void> reset() async {
     state = state.copyWith(
       completed: false,
-      lastStep: OnboardingStep.role,
+      lastStep: OnboardingStep.welcome,
     );
     final prefs = await _prefsFuture;
     await prefs.setBool(_kCompleted, false);

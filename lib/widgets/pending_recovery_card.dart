@@ -574,7 +574,7 @@ class _VerifyFactorsDialogState extends ConsumerState<_VerifyFactorsDialog>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Comprueba los factores de seguridad del miembro',
+                      'Comprueba los factores de seguridad de tu amor',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
@@ -603,7 +603,7 @@ class _VerifyFactorsDialogState extends ConsumerState<_VerifyFactorsDialog>
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
-                                'Pregunta clave del grupo',
+                                'Pregunta clave',
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   color: scheme.onPrimaryContainer,
                                   fontWeight: FontWeight.w700,

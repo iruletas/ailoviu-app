@@ -9,11 +9,15 @@ import 'settings_components.dart';
 /// Paso 1: Bienvenida y contexto.
 class OnboardingWelcomeStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
+
+  /// Quien ya tiene un QR (no configura nada, solo escanea).
+  final VoidCallback onJoin;
   final VoidCallback onSkipAll;
 
   const OnboardingWelcomeStep({
     super.key,
     required this.onNext,
+    required this.onJoin,
     required this.onSkipAll,
   });
 
@@ -113,7 +117,7 @@ class _OnboardingWelcomeStepState
                 const SizedBox(height: 12),
                 Text(
                   'La app funcionará solo en este celular hasta que configures '
-                  'el espacio y vincules a tu pareja.',
+                  'el espacio y vincules a tu amor.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
@@ -216,7 +220,7 @@ class _OnboardingWelcomeStepState
           const SizedBox(height: 28),
 
           Text(
-            'Bienvenidx a Ailoviu',
+            'Bienvenidos a Ailoviu',
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.w800,
@@ -226,9 +230,8 @@ class _OnboardingWelcomeStepState
           const SizedBox(height: 16),
 
           Text(
-            'Este es el espacio de ustedes. Lo que compartan viaja cifrado '
-            'y nadie más puede leerlo. Ni nosotros podemos ver lo que se '
-            'mandan. Por eso, uno de ustedes debe configurar el espacio.',
+            'Este es su rincón. Lo que compartan viaja cifrado '
+            'y nadie más puede leerlo.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyLarge?.copyWith(
               color: scheme.onSurfaceVariant,
@@ -243,9 +246,8 @@ class _OnboardingWelcomeStepState
               icon: Icons.shield_rounded,
               title: 'Privacidad de verdad',
               description:
-                  'Si eres anfitrión, configurarás su relación, el mapa y la '
-                  'conexión segura. Si te invitaron, sólo tendrás que escanear '
-                  'un QR para unirte.',
+                  'El primero en abrir la app deja todo listo y muestra un QR. '
+                  'Tu amor solo lo escanea.',
             ),
           ),
           const SizedBox(height: 40),
@@ -272,6 +274,19 @@ class _OnboardingWelcomeStepState
           ),
           const SizedBox(height: 12),
 
+          OutlinedButton.icon(
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              widget.onJoin();
+            },
+            icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+            label: const Text('Ya tengo un código QR'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              shape: const StadiumBorder(),
+            ),
+          ),
+          const SizedBox(height: 4),
           TextButton(
             onPressed: _confirmSkipAll,
             style: TextButton.styleFrom(

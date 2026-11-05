@@ -15,14 +15,20 @@ class CreateGroupFormResult {
 }
 
 class CreateGroupDialog extends StatefulWidget {
-  const CreateGroupDialog({super.key});
+  /// Nombre de quien configura (primer nombre de la relación). Si viene
+  /// vacío, se pide en el formulario.
+  final String knownName;
+
+  const CreateGroupDialog({super.key, this.knownName = ''});
 
   @override
   State<CreateGroupDialog> createState() => _CreateGroupDialogState();
 }
 
 class _CreateGroupDialogState extends State<CreateGroupDialog> {
-  final _nameCtrl = TextEditingController();
+  late final TextEditingController _nameCtrl =
+      TextEditingController(text: widget.knownName);
+  bool get _askName => widget.knownName.trim().isEmpty;
   final _questionCtrl = TextEditingController();
   final _answerCtrl = TextEditingController();
 
@@ -74,7 +80,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Icon(
-                        Icons.group_add_rounded,
+                        Icons.lock_rounded,
                         size: 28,
                         color: scheme.onPrimaryContainer,
                       ),
@@ -82,7 +88,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Crear grupo',
+                    'Pregunta de seguridad',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w800,
@@ -99,13 +105,15 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  LinkingLabeledField(
-                    label: 'Tu nombre',
-                    hint: 'Ej. Ana',
-                    controller: _nameCtrl,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 12),
+                  if (_askName) ...[
+                    LinkingLabeledField(
+                      label: 'Tu nombre',
+                      hint: 'Tu nombre',
+                      controller: _nameCtrl,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   LinkingLabeledField(
                     label: 'Pregunta de recuperación',
                     hint: 'Ej. ¿Cómo se llama nuestra mascota?',
@@ -150,7 +158,7 @@ class _CreateGroupDialogState extends State<CreateGroupDialog> {
                             minimumSize: const Size.fromHeight(48),
                             shape: const StadiumBorder(),
                           ),
-                          child: const Text('Crear'),
+                          child: const Text('Continuar'),
                         ),
                       ),
                     ],

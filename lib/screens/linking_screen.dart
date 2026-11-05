@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/group_models.dart';
 import '../providers/linking_providers.dart';
+import '../providers/relationship_providers.dart';
 import '../providers/sync_providers.dart';
 import '../services/background_sync.dart';
 import '../services/invite_service.dart';
@@ -35,7 +36,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
   bool _busy = false;
 
   // ════════════════════════════════════════════════════════════════
-  // Crear grupo
+  // Mostrar mi código QR
   // ════════════════════════════════════════════════════════════════
 
   Future<void> _createGroup() async {
@@ -50,7 +51,11 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (_, __, ___) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: const CreateGroupDialog(),
+        child: CreateGroupDialog(
+          knownName: ref.read(relationshipProvider).visibleNames.isNotEmpty
+              ? ref.read(relationshipProvider).visibleNames.first
+              : '',
+        ),
       ),
       transitionBuilder: (_, animation, __, child) {
         final curved = CurvedAnimation(
@@ -172,7 +177,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
 
       if (!published) {
         _showErrorSnack(
-          'No se pudo avisar al host. Revisa tu conexión y reintenta.',
+          'No se pudo avisar a tu amor. Revisa tu conexión y reintenta.',
         );
         return;
       }
@@ -419,9 +424,9 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
                 Expanded(
                   child: TonalMicroHeader(
                     icon: Icons.groups_rounded,
-                    title: group.isHost ? 'Eres el anfitrión' : 'Miembros',
+                    title: group.isHost ? 'Configuraste este espacio' : 'Personas',
                     description:
-                        'Todos comparten los datos cifrados del grupo.',
+                        'Lo que comparten viaja cifrado.',
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -464,7 +469,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
                 icon: Icons.qr_code_rounded,
                 title: 'Invitar',
                 description:
-                    'Genera un QR que el nuevo miembro escanea. '
+                    'Genera un QR para que tu amor lo escanee. '
                     'Caduca a los 10 minutos.',
               ),
               const SizedBox(height: 16),
@@ -496,7 +501,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
               title: 'Recuperación',
               description:
                   'Si cambiaste de teléfono, recupera tu cuenta con la '
-                  'aprobación del grupo.',
+                  'aprobación de tu amor.',
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(

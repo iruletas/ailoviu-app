@@ -24,8 +24,8 @@ class LinkingTile extends ConsumerWidget {
     final statusText = groupId == null
         ? 'Sin configurar'
         : approvedCount == 1
-            ? '1 miembro'
-            : '$approvedCount miembros';
+            ? 'Solo tú'
+            : 'Los dos vinculados';
 
     final icon = isLinked ? Icons.link_rounded : Icons.link_off_rounded;
     final bubbleBg =

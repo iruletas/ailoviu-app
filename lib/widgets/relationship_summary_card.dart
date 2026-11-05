@@ -188,7 +188,7 @@ class _HeroCardState extends State<_HeroCard> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          rel.type.label,
+                          'Nuestro espacio',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: scheme.onPrimaryContainer
                                 .withValues(alpha: 0.75),
@@ -334,7 +334,7 @@ class _CompactCardState extends State<_CompactCard> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      hasAnyData ? rel.type.label : 'Sin configurar',
+                      hasAnyData ? 'Nuestro espacio' : 'Sin configurar',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),

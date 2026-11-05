@@ -8,7 +8,7 @@ import 'package:m3e_shapes/m3e_shapes.dart';
 /// callback. No conoce nada del dominio de la app.
 ///
 /// Se usa en `relationship_screen.dart` con las formas de cada
-/// `RelationshipType`. Puede reusarse para un futuro selector de
+/// los tipos de relación (ya eliminados). Puede reusarse para un futuro selector de
 /// iconos de avatar (PENDIENTES ítem 7) o de cualquier otra opción
 /// representable con forma.
 class ShapeSelectorCard extends StatefulWidget {

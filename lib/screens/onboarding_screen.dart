@@ -7,10 +7,15 @@ import '../widgets/onboarding_firebase_step.dart';
 import '../widgets/onboarding_linking_step.dart';
 import '../widgets/onboarding_map_step.dart';
 import '../widgets/onboarding_relationship_step.dart';
-import '../widgets/onboarding_role_step.dart';
 import '../widgets/onboarding_welcome_step.dart';
 import 'onboarding_welcome_relationship_screen.dart';
 
+/// Onboarding sin selección de rol.
+///
+/// El rol se deduce de lo que hace la persona:
+/// - Si toca "Empezar", configura el espacio (nombres, mapa, Firebase) y
+///   muestra el QR. Es quien configura; su nombre es el primer campo.
+/// - Si toca "Ya tengo un código QR", solo escanea y se une.
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -42,11 +47,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       _steps = [
         OnboardingWelcomeStep(
           onNext: _next,
+          onJoin: _startAsGuest,
           onSkipAll: _finish,
-        ),
-        OnboardingRoleStep(
-          onHostSelected: _dummy,
-          onGuestSelected: _dummy,
         ),
         OnboardingLinkingStep(
           isGuestFlow: true,
@@ -58,11 +60,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       _steps = [
         OnboardingWelcomeStep(
           onNext: _next,
+          onJoin: _startAsGuest,
           onSkipAll: _finish,
-        ),
-        OnboardingRoleStep(
-          onHostSelected: _next,
-          onGuestSelected: _selectGuest,
         ),
         OnboardingRelationshipStep(
           onNext: _next,
@@ -88,16 +87,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  void _dummy() {}
-
-  void _selectGuest() {
+  void _startAsGuest() {
     setState(() {
       _isGuest = true;
       _rebuildSteps();
-      // Salta directo al escáner (índice 2 en la nueva lista de invitado)
-      _currentStep = 2;
+      _currentStep = 1;
     });
-    _pageController.jumpToPage(2);
+    _pageController.jumpToPage(1);
     HapticFeedback.selectionClick();
   }
 
@@ -113,14 +109,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _next() => _goTo(_currentStep + 1);
 
   void _previous() {
-    // Si el invitado intenta retroceder desde el escáner, reseteamos el flujo
-    if (_isGuest && _currentStep == 2) {
+    // Si quien escanea retrocede, vuelve a la bienvenida.
+    if (_isGuest && _currentStep == 1) {
       setState(() {
         _isGuest = false;
         _rebuildSteps();
-        _currentStep = 1; // Vuelve al paso 2 (Rol)
+        _currentStep = 0;
       });
-      _pageController.jumpToPage(1);
+      _pageController.jumpToPage(0);
       HapticFeedback.selectionClick();
       return;
     }

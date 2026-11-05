@@ -81,7 +81,7 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Los demás miembros del grupo tienen que aprobar tu '
+                  'Tu amor tiene que aprobar tu '
                   'entrada. Te avisaremos en cuanto esté listo.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(

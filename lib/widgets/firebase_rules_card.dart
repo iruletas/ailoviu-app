@@ -83,7 +83,7 @@ class _FirebaseRulesCardState extends State<FirebaseRulesCard> {
             title: 'Reglas de seguridad',
             description:
                 'Estas reglas son las que impiden que nadie más entre a '
-                'tus datos. Solo tú y tu pareja tienen llave.',
+                'tus datos. Solo ustedes dos tienen llave.',
           ),
           const SizedBox(height: 12),
           

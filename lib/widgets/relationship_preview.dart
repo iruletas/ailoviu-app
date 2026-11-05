@@ -24,7 +24,7 @@ class RelationshipPreview extends ConsumerWidget {
         names.any((n) => n.trim().isNotEmpty) || rel.startDate != null;
 
     final signature =
-        '${names.join("|")}_${rel.type.name}_${rel.startDate?.toIso8601String()}';
+        '${names.join("|")}_${rel.startDate?.toIso8601String()}';
 
     return Container(
       decoration: BoxDecoration(
@@ -107,7 +107,7 @@ class _PreviewContent extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Agrega sus nombres y la fecha de inicio para empezar',
+              'Agrega sus nombres y la fecha en que se hicieron novios',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: scheme.onPrimaryContainer.withValues(alpha: 0.75),
@@ -155,7 +155,7 @@ class _PreviewContent extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          relationship.type.label,
+          'Nuestro espacio',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: scheme.onPrimaryContainer.withValues(alpha: 0.75),

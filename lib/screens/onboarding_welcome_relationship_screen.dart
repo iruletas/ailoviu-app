@@ -216,26 +216,6 @@ class _OnboardingWelcomeRelationshipScreenState
                             color: scheme.onSurfaceVariant,
                           ),
                         ),
-                      if (names.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            rel.type.label,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -332,9 +312,9 @@ class _OnboardingWelcomeRelationshipScreenState
                     '${names.last}';
 
     return namesLabel.isEmpty
-        ? 'Este es el espacio de ustedes. Lo que compartan viaja cifrado, '
+        ? 'Este es su rincón. Lo que compartan viaja cifrado, '
             'y nadie más puede leerlo. Ni siquiera nosotros.'
-        : 'Este es el espacio de $namesLabel. Lo que compartan viaja '
+        : 'Este es el rincón de $namesLabel. Lo que compartan viaja '
             'cifrado, y nadie más puede leerlo. Ni siquiera nosotros.';
   }
 }

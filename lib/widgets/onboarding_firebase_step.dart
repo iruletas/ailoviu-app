@@ -489,7 +489,7 @@ class _SkipWarningDialog extends StatelessWidget {
                 Text(
                   'La app funcionará solo en este celular. No podrás '
                   'compartir estados, ubicaciones ni zumbidos con tu '
-                  'pareja, y no se podrá recuperar la cuenta si pierdes '
+                  'amor, y no se podrá recuperar la cuenta si pierdes '
                   'este teléfono.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(

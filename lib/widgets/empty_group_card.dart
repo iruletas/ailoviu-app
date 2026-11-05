@@ -47,7 +47,7 @@ class EmptyGroupCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Icon(
-              Icons.groups_rounded,
+              Icons.qr_code_2_rounded,
               size: 26,
               color: scheme.onPrimaryContainer,
             ),
@@ -61,7 +61,7 @@ class EmptyGroupCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'El primero crea el grupo. Los demás se unen escaneando el QR.',
+            'Un celular muestra su código QR y el otro lo escanea.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: scheme.onSurfaceVariant,
               height: 1.4,
@@ -69,7 +69,7 @@ class EmptyGroupCard extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           LinkingPillButton(
-            label: 'Crear grupo',
+            label: 'Mostrar mi código QR',
             icon: Icons.add_rounded,
             busy: busy,
             filled: true,
@@ -79,7 +79,7 @@ class EmptyGroupCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           LinkingPillButton(
-            label: 'Unirme a un grupo',
+            label: 'Escanear un código QR',
             icon: Icons.qr_code_scanner_rounded,
             busy: false,
             filled: false,

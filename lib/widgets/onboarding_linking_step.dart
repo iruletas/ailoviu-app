@@ -19,7 +19,7 @@ import 'settings_components.dart';
 import 'waiting_approval_screen.dart';
 
 class OnboardingLinkingStep extends ConsumerStatefulWidget {
-  /// Si es `true`, salta la selección de rol y va directo al escáner.
+  /// `true` si esta persona solo escanea un QR (no configura nada).
   final bool isGuestFlow;
   final VoidCallback onFinish;
   final VoidCallback onBack;
@@ -45,7 +45,7 @@ class _OnboardingLinkingStepState
   static const _suggestedQuestion =
       '¿Cómo se llamaba nuestra primera mascota?';
 
-  Future<void> _createGroup() async {
+  Future<void> _showMyQr() async {
     if (_busy) return;
     final rel = ref.read(relationshipProvider);
     final me = rel.visibleNames.isNotEmpty ? rel.visibleNames.first : '';
@@ -56,7 +56,7 @@ class _OnboardingLinkingStepState
     final transport = await ref.read(keyStoreProvider).getTransportConfig();
     if (transport == null) {
       setState(() => _error =
-          'Configura Firebase en el paso anterior antes de crear el grupo.');
+          'Configura Firebase en el paso anterior antes de mostrar el código.');
       return;
     }
     final form = await _askGroupForm(me);
@@ -92,7 +92,7 @@ class _OnboardingLinkingStepState
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'No se pudo crear el grupo: $e';
+        _error = 'No se pudo generar el código: $e';
       });
     }
   }
@@ -308,7 +308,6 @@ class _OnboardingLinkingStepState
 
   @override
   Widget build(BuildContext context) {
-    final rel = ref.watch(relationshipProvider);
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final hasInvite = _invite != null;
@@ -326,12 +325,14 @@ class _OnboardingLinkingStepState
       primaryLabel = 'Escanear QR';
       onPrimary = _joinGroup;
     } else {
-      primaryLabel = 'Crear grupo y mostrar QR';
-      onPrimary = _createGroup;
+      primaryLabel = 'Mostrar mi código QR';
+      onPrimary = _showMyQr;
     }
 
     return OnboardingScaffold(
       step: OnboardingStep.linking,
+      customStepNumber: isGuest ? 2 : null,
+      customTotalSteps: isGuest ? 2 : null,
       showSkip: false,
       bottomAction: showPrimary
           ? _BottomNav(
@@ -346,7 +347,7 @@ class _OnboardingLinkingStepState
         children: [
           const SizedBox(height: 8),
           Text(
-            isGuest ? 'Unirse a la relación' : _title(rel),
+            isGuest ? 'Unirse al espacio' : 'Muestra tu código',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
               letterSpacing: -0.4,
@@ -355,7 +356,7 @@ class _OnboardingLinkingStepState
           const SizedBox(height: 6),
           Text(
             isGuest 
-                ? 'Pídele a tu pareja que abra Ailoviu y te muestre el código QR desde su pantalla.'
+                ? 'Pídele a tu amor que te muestre el código QR desde su pantalla.'
                 : 'Cuando abran Ailoviu en su celular, verán el mismo espacio que tú.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: scheme.onSurfaceVariant,
@@ -436,16 +437,6 @@ class _OnboardingLinkingStepState
       ),
     );
   }
-
-  String _title(AppRelationship rel) {
-    if (rel.type == RelationshipType.polyamorous) {
-      return 'Prepara todo para tus parejas';
-    }
-    if (rel.type == RelationshipType.other) {
-      return 'Prepara todo para tu relación';
-    }
-    return 'Prepara todo para tu pareja';
-  }
 }
 
 // ── Tarjeta de Explicación (Invitado) ──────────────────────────────────
@@ -463,8 +454,8 @@ class _GuestExplanationCard extends StatelessWidget {
             icon: Icons.qr_code_scanner_rounded,
             title: 'Escanear el código',
             description:
-                'Pídele a tu pareja que abra Ailoviu y te muestre el código QR '
-                'desde su pantalla.',
+                'Pídele a tu amor que te muestre el código QR desde '
+                'su pantalla.',
           ),
           const SizedBox(height: 16),
           Container(
@@ -515,14 +506,14 @@ class _ExplanationCard extends StatelessWidget {
             icon: Icons.qr_code_rounded,
             title: 'Un QR, dos celulares',
             description:
-                'Tú creas el grupo. Tu pareja escanea el QR desde su '
-                'celular. A partir de ahí, todo se comparte cifrado.',
+                'Tu celular muestra el código y el otro lo escanea. '
+                'A partir de ahí, todo se comparte cifrado.',
           ),
           const SizedBox(height: 16),
           const _StaggeredBullet(
             index: 0,
             number: 1,
-            text: 'Tocas "Crear grupo" abajo.',
+            text: 'Tocas "Mostrar mi código QR" abajo.',
           ),
           const SizedBox(height: 12),
           const _StaggeredBullet(
@@ -535,8 +526,8 @@ class _ExplanationCard extends StatelessWidget {
             index: 2,
             number: 3,
             text:
-                'Tu pareja abre Ailoviu → Ajustes → Conexiones → Vinculación '
-                '→ Unirme, y lo escanea.',
+                'En el otro celular, abre Ailoviu, toca "Ya tengo un código '
+                'QR" y escanéalo.',
           ),
           const SizedBox(height: 12),
           const _StaggeredBullet(
@@ -749,7 +740,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
   }
 
   bool get _valid =>
-      _nameCtrl.text.trim().isNotEmpty &&
+      (!widget.isGuest || _nameCtrl.text.trim().isNotEmpty) &&
       _questionCtrl.text.trim().isNotEmpty &&
       _answerCtrl.text.trim().isNotEmpty;
 
@@ -795,7 +786,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Icon(
-                    widget.isGuest ? Icons.badge_rounded : Icons.group_add_rounded,
+                    widget.isGuest ? Icons.badge_rounded : Icons.lock_rounded,
                     size: 24,
                     color: scheme.onPrimaryContainer,
                   ),
@@ -806,7 +797,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.isGuest ? 'Tus datos' : 'Crear grupo',
+                        widget.isGuest ? 'Tus datos' : 'Pregunta de seguridad',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -826,13 +817,15 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
               ],
             ),
             const SizedBox(height: 20),
-            _SheetField(
-              label: 'Tu nombre',
-              hint: 'Ej. Ana',
-              controller: _nameCtrl,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
+            if (widget.isGuest) ...[
+              _SheetField(
+                label: 'Tu nombre',
+                hint: 'Tu nombre',
+                controller: _nameCtrl,
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+            ],
             _SheetField(
               label: 'Pregunta de recuperación',
               hint: 'La que quieras',
@@ -869,7 +862,7 @@ class _GroupFormSheetState extends State<_GroupFormSheet> {
                       minimumSize: const Size.fromHeight(48),
                       shape: const StadiumBorder(),
                     ),
-                    child: Text(widget.isGuest ? 'Unirse' : 'Crear'),
+                    child: Text(widget.isGuest ? 'Unirse' : 'Continuar'),
                   ),
                 ),
               ],

@@ -145,10 +145,10 @@ class _LinkingMemberRowState extends ConsumerState<LinkingMemberRow>
       pageBuilder: (_, __, ___) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: _GlassConfirmDialog(
-          title: 'Expulsar a ${name.isEmpty ? 'este miembro' : name}',
+          title: 'Expulsar a ${name.isEmpty ? 'tu amor' : name}',
           message:
               'Dejará de recibir mensajes y no podrá volver a ver los '
-              'datos nuevos del grupo. El historial anterior ya no '
+              'datos nuevos del espacio. El historial anterior ya no '
               'será accesible para esta persona.',
         ),
       ),
@@ -256,7 +256,7 @@ class _LinkingMemberRowState extends ConsumerState<LinkingMemberRow>
                                     if (m.isHost)
                                       _MicroBadge(
                                         icon: Icons.star_rounded,
-                                        label: 'Anfitrión',
+                                        label: 'Configuró',
                                         background: scheme.tertiaryContainer,
                                         foreground:
                                             scheme.onTertiaryContainer,

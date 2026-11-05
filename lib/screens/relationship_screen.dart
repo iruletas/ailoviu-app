@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:m3e_shapes/m3e_shapes.dart';
 
 import '../providers/relationship_providers.dart';
 import '../widgets/anniversary_card.dart';
 import '../widgets/danger_action_card.dart';
 import '../widgets/relationship_preview.dart';
 import '../widgets/settings_components.dart';
-import '../widgets/shape_selector_card.dart';
 import '../widgets/tonal_back_button.dart';
 
 class RelationshipScreen extends ConsumerStatefulWidget {
@@ -28,10 +26,10 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
     super.initState();
     final rel = ref.read(relationshipProvider);
     final initialNames = List<String>.from(rel.partnerNames);
-    while (initialNames.length < 3) {
+    while (initialNames.length < 2) {
       initialNames.add('');
     }
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
       final controller = TextEditingController(text: initialNames[i]);
       final node = FocusNode();
       node.addListener(() {
@@ -110,7 +108,7 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
     final notifier = ref.read(relationshipProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
-    final visibleCount = rel.visibleCount;
+    const visibleCount = 2;
     final hasAnyData =
         rel.partnerNames.any((n) => n.trim().isNotEmpty) ||
             rel.startDate != null;
@@ -151,38 +149,10 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const TonalMicroHeader(
-                        icon: Icons.favorite_outline,
-                        title: 'Tipo de relación',
-                        description:
-                            'Elige la etiqueta que mejor describa su vínculo.',
-                      ),
-                      const SizedBox(height: 20),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          for (final type in RelationshipType.values)
-                            ShapeSelectorCard(
-                              shape: _shapeForType(type),
-                              label: type.label,
-                              selected: rel.type == type,
-                              onTap: () => notifier.setType(type),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                BentoCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const TonalMicroHeader(
                         icon: Icons.people_outline,
-                        title: 'Integrantes',
+                        title: 'Nombres',
                         description:
-                            'Sus nombres se guardan automáticamente.',
+                            'Se guardan automáticamente.',
                       ),
                       const SizedBox(height: 20),
                       for (int i = 0; i < visibleCount; i++) ...[
@@ -190,6 +160,7 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
                           animation: _focusNodes[i],
                           builder: (context, _) => _MemberField(
                             letter: String.fromCharCode(65 + i),
+                            hint: i == 0 ? 'Tu nombre' : 'Su nombre',
                             controller: _controllers[i],
                             focusNode: _focusNodes[i],
                             isLast: i == visibleCount - 1,
@@ -221,27 +192,11 @@ class _RelationshipScreenState extends ConsumerState<RelationshipScreen> {
       ),
     );
   }
-
-  static M3EShape _shapeForType(RelationshipType type) {
-    switch (type) {
-      case RelationshipType.hetero:
-        return M3EShape.circle;
-      case RelationshipType.lesbian:
-        return M3EShape.triangle;
-      case RelationshipType.gay:
-        return M3EShape.square;
-      case RelationshipType.polyamorous:
-        return M3EShape.cookie6Sided;
-      case RelationshipType.open:
-        return M3EShape.diamond;
-      case RelationshipType.other:
-        return M3EShape.arch;
-    }
-  }
 }
 
 class _MemberField extends StatelessWidget {
   final String letter;
+  final String hint;
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool isLast;
@@ -249,6 +204,7 @@ class _MemberField extends StatelessWidget {
 
   const _MemberField({
     required this.letter,
+    required this.hint,
     required this.controller,
     required this.focusNode,
     required this.isLast,
@@ -275,7 +231,7 @@ class _MemberField extends StatelessWidget {
         fillColor: focused
             ? scheme.primaryContainer.withValues(alpha: 0.35)
             : scheme.surfaceContainerHigh,
-        hintText: 'Nombre del miembro $letter',
+        hintText: hint,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         border: OutlineInputBorder(

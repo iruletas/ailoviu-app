@@ -318,8 +318,8 @@ class _StepOne extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 'Recupera tu cuenta escaneando el QR de recuperación. '
-                'Otro miembro del grupo (o tu dispositivo viejo, si aún '
-                'lo tienes) lo genera desde Vinculación.',
+                'Tu amor (o tu dispositivo viejo, si aún lo tienes) '
+                'lo genera desde Vinculación.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                   height: 1.5,
@@ -337,8 +337,7 @@ class _StepOne extends StatelessWidget {
                 icon: Icons.verified_user_rounded,
                 title: 'Aprobación unánime',
                 description:
-                    'Todos los miembros del grupo tienen que aprobar tu '
-                    'recuperación.',
+                    'Tu amor tiene que aprobar tu recuperación.',
               ),
               const SizedBox(height: 14),
               const TonalMicroHeader(
@@ -346,14 +345,14 @@ class _StepOne extends StatelessWidget {
                 title: 'Reemplaza tu dispositivo viejo',
                 description:
                     'El deviceId viejo se reemplaza por el nuevo. El '
-                    'dispositivo viejo deja de tener acceso al grupo.',
+                    'dispositivo viejo deja de tener acceso al espacio.',
               ),
               const SizedBox(height: 14),
               const TonalMicroHeader(
                 icon: Icons.shield_outlined,
                 title: 'Verificación con factores',
                 description:
-                    'El grupo verifica la pregunta de recuperación y, '
+                    'Se verifica la pregunta de recuperación y, '
                     'opcionalmente, tu PIN viejo.',
               ),
             ],
@@ -521,7 +520,7 @@ class _StepTwoState extends State<_StepTwo> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Text(
-            'Pídelo a otro miembro del grupo, o míralo en la pantalla de '
+            'Pídelo a tu amor, o míralo en la pantalla de '
             'Vinculación del dispositivo viejo.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
@@ -823,7 +822,7 @@ class _RecoveryWaitingScreenState extends State<_RecoveryWaitingScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'El grupo tiene que verificar tus factores y aprobar la '
+                  'Tu amor tiene que verificar tus factores y aprobar la '
                   'recuperación. Te avisaremos en cuanto esté listo.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(

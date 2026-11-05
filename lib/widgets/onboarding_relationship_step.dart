@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:m3e_shapes/m3e_shapes.dart';
 
 import '../providers/onboarding_providers.dart';
 import '../providers/relationship_providers.dart';
@@ -9,12 +8,12 @@ import 'anniversary_card.dart';
 import 'onboarding_scaffold.dart';
 import 'relationship_preview.dart';
 import 'settings_components.dart';
-import 'shape_selector_card.dart';
 
-/// Paso 2: Configuración de la relación.
+/// Paso 2: Nombres y fecha de inicio. El primer campo es de quien
+/// configura la app; no hay tipos de relación.
 ///
-/// Reutiliza `RelationshipPreview` (preview en vivo), `ShapeSelectorCard`
-/// (tipo de relación) y el picker de fecha M3 oficial. Toda la
+/// Reutiliza `RelationshipPreview` (preview en vivo) y el picker de fecha
+/// M3 oficial. Toda la
 /// persistencia está en `relationshipProvider`; este widget solo la
 /// invoca.
 class OnboardingRelationshipStep extends ConsumerStatefulWidget {
@@ -44,15 +43,15 @@ class _OnboardingRelationshipStepState
     super.initState();
     final rel = ref.read(relationshipProvider);
     final initialNames = List<String>.from(rel.partnerNames);
-    while (initialNames.length < 3) {
+    while (initialNames.length < 2) {
       initialNames.add('');
     }
     _controllers = List.generate(
-      3,
+      2,
       (i) => TextEditingController(text: initialNames[i]),
     );
-    _focusNodes = List.generate(3, (_) => FocusNode());
-    for (int i = 0; i < 3; i++) {
+    _focusNodes = List.generate(2, (_) => FocusNode());
+    for (int i = 0; i < 2; i++) {
       final index = i;
       _focusNodes[i].addListener(() {
         if (!_focusNodes[index].hasFocus) {
@@ -110,7 +109,6 @@ class _OnboardingRelationshipStepState
   Widget build(BuildContext context) {
     final rel = ref.watch(relationshipProvider);
     final notifier = ref.read(relationshipProvider.notifier);
-    final visibleCount = rel.visibleCount;
     final hasAnyData =
         rel.partnerNames.any((n) => n.trim().isNotEmpty) ||
             rel.startDate != null;
@@ -124,7 +122,7 @@ class _OnboardingRelationshipStepState
         onPrimary: () {
           HapticFeedback.mediumImpact();
           // Guardado final por si el último campo no perdió el foco.
-          for (int i = 0; i < 3; i++) {
+          for (int i = 0; i < 2; i++) {
             notifier.setNameAt(i, _controllers[i].text);
           }
           widget.onNext();
@@ -145,7 +143,7 @@ class _OnboardingRelationshipStepState
           ),
           const SizedBox(height: 6),
           Text(
-            'Cuéntanos cómo se llaman y desde cuándo están juntos. '
+            'Cuéntanos cómo se llaman y desde cuándo son novios. '
             'Puedes cambiarlo después.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -158,86 +156,34 @@ class _OnboardingRelationshipStepState
           const RelationshipPreview(),
           const SizedBox(height: 20),
 
-          // Tipo de relación.
-          BentoCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const TonalMicroHeader(
-                  icon: Icons.favorite_outline,
-                  title: 'Tipo de relación',
-                  description: 'Elige la que mejor los describa.',
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final type in RelationshipType.values)
-                      ShapeSelectorCard(
-                        shape: _shapeForType(type),
-                        label: type.label,
-                        selected: rel.type == type,
-                        onTap: () => notifier.setType(type),
-                        width: 96,
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Nombres (con animación al aparecer el tercero).
+          // Nombres: el primero es de quien configura.
           BentoCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const TonalMicroHeader(
                   icon: Icons.people_outline,
-                  title: 'Sus nombres',
+                  title: 'Nombres',
                   description:
                       'Se guardan automáticamente mientras escribes.',
                 ),
                 const SizedBox(height: 16),
-                // Campo 1 (siempre visible).
                 _MemberField(
-                  letter: String.fromCharCode(65),
+                  letter: 'A',
+                  hint: 'Tu nombre',
                   controller: _controllers[0],
                   focusNode: _focusNodes[0],
-                  isLast: visibleCount == 1,
+                  isLast: false,
                   onSubmit: (v) => notifier.setNameAt(0, v),
                 ),
                 const SizedBox(height: 12),
-                // Campo 2 (siempre visible).
                 _MemberField(
-                  letter: String.fromCharCode(66),
+                  letter: 'B',
+                  hint: 'Su nombre',
                   controller: _controllers[1],
                   focusNode: _focusNodes[1],
-                  isLast: visibleCount == 2,
+                  isLast: true,
                   onSubmit: (v) => notifier.setNameAt(1, v),
-                ),
-                // Campo 3 (solo si el tipo lo permite).
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.fastOutSlowIn,
-                  alignment: Alignment.topCenter,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 260),
-                    opacity: visibleCount >= 3 ? 1.0 : 0.0,
-                    child: visibleCount >= 3
-                        ? Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: _MemberField(
-                              letter: String.fromCharCode(67),
-                              controller: _controllers[2],
-                              focusNode: _focusNodes[2],
-                              isLast: true,
-                              onSubmit: (v) => notifier.setNameAt(2, v),
-                            ),
-                          )
-                        : const SizedBox(width: double.infinity),
-                  ),
                 ),
               ],
             ),
@@ -254,23 +200,6 @@ class _OnboardingRelationshipStepState
       ),
     );
   }
-
-  static M3EShape _shapeForType(RelationshipType type) {
-    switch (type) {
-      case RelationshipType.hetero:
-        return M3EShape.circle;
-      case RelationshipType.lesbian:
-        return M3EShape.triangle;
-      case RelationshipType.gay:
-        return M3EShape.square;
-      case RelationshipType.polyamorous:
-        return M3EShape.cookie6Sided;
-      case RelationshipType.open:
-        return M3EShape.diamond;
-      case RelationshipType.other:
-        return M3EShape.arch;
-    }
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -279,6 +208,7 @@ class _OnboardingRelationshipStepState
 
 class _MemberField extends StatelessWidget {
   final String letter;
+  final String hint;
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool isLast;
@@ -286,6 +216,7 @@ class _MemberField extends StatelessWidget {
 
   const _MemberField({
     required this.letter,
+    required this.hint,
     required this.controller,
     required this.focusNode,
     required this.isLast,
@@ -311,7 +242,7 @@ class _MemberField extends StatelessWidget {
         fillColor: focused
             ? scheme.primaryContainer.withValues(alpha: 0.35)
             : scheme.surfaceContainerHigh,
-        hintText: 'Nombre $letter',
+        hintText: hint,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 18,
