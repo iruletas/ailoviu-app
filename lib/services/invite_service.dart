@@ -14,6 +14,10 @@ class InviteService {
 
   static const int version = 1;
 
+  /// Crea un QR de vinculación. Además de la config de Firebase y la
+  /// llave de CARTO, el payload cifrado lleva los datos de la relación
+  /// (nombres + fecha de inicio) para que el guest no tenga que
+  /// rellenarlos al unirse.
   Future<GroupInvitePayload> createJoinInvite({
     required String groupId,
     required String hostDeviceId,
@@ -21,15 +25,22 @@ class InviteService {
     required Map<String, dynamic> transportConfig,
     required String recoveryQuestionPlain,
     String? cartoKey,
+    String? hostDisplayName,
+    String? partnerDisplayName,
+    String? startDateIso,
     Duration ttl = const Duration(minutes: 10),
   }) async {
     final inviteToken = _generateToken();
     final inviteKey = _crypto.deriveInviteKey(inviteToken);
 
-    // Empaquetamos la config de Firebase y la llave de CARTO juntas
     final payload = {
       'transportConfig': transportConfig,
       if (cartoKey != null && cartoKey.isNotEmpty) 'cartoKey': cartoKey,
+      if (hostDisplayName != null && hostDisplayName.isNotEmpty)
+        'hostDisplayName': hostDisplayName,
+      if (partnerDisplayName != null && partnerDisplayName.isNotEmpty)
+        'partnerDisplayName': partnerDisplayName,
+      if (startDateIso != null) 'startDateIso': startDateIso,
     };
 
     final encrypted = await _crypto.encryptWithKeyBytes(
@@ -77,7 +88,8 @@ class InviteService {
   }
 
   /// Descifra el payload del QR de join. Devuelve un mapa que contiene
-  /// `transportConfig` (Map) y opcionalmente `cartoKey` (String).
+  /// `transportConfig` (Map), opcionalmente `cartoKey` (String) y los
+  /// datos de la relación si el host los incluyó.
   Future<Map<String, dynamic>> decryptInvitePayload(
     GroupInvitePayload invite,
   ) async {
@@ -100,15 +112,40 @@ class InviteService {
         ciphertextBase64: ct,
         nonceBase64: nonce,
       );
-      
-      // Si por compatibilidad viene la config "suelta" (sin el wrapper),
-      // la envolvemos para que el caller siempre reciba el mismo formato.
+
+      // Compatibilidad con QR viejos (sin wrapper).
       if (!decoded.containsKey('transportConfig')) {
         return {'transportConfig': decoded};
       }
       return decoded;
     } catch (_) {
       throw InviteException('No se pudo descifrar el QR');
+    }
+  }
+
+  /// Lee los datos de relación del QR sin consumirlo (no persiste nada).
+  ///
+  /// Se usa en la pantalla de unirse antes de `prepareJoin`, para no
+  /// preguntar el nombre si el host ya lo puso en el QR.
+  ///
+  /// Nunca lanza: devuelve nulls si el payload no traía esos campos o
+  /// si el QR es de un modo distinto.
+  Future<
+      ({
+        String? hostName,
+        String? partnerName,
+        DateTime? startDate,
+      })> peekRelationshipInfo(GroupInvitePayload invite) async {
+    try {
+      final payload = await decryptInvitePayload(invite);
+      final startIso = payload['startDateIso'] as String?;
+      return (
+        hostName: payload['hostDisplayName'] as String?,
+        partnerName: payload['partnerDisplayName'] as String?,
+        startDate: startIso != null ? DateTime.tryParse(startIso) : null,
+      );
+    } catch (_) {
+      return (hostName: null, partnerName: null, startDate: null);
     }
   }
 
