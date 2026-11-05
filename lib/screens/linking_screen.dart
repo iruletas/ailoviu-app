@@ -79,12 +79,29 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     }
 
     try {
+      // Leemos la relación para pasarla al QR.
+      final rel = ref.read(relationshipProvider);
+      final names = rel.visibleNames;
+      final hostName = names.isNotEmpty ? names[0].trim() : '';
+      final partnerName = names.length > 1 ? names[1].trim() : '';
+
       final linking = ref.read(linkingServiceProvider);
       final created = await linking.createGroup(
         displayName: result.displayName,
         recoveryQuestionPlain: result.questionPlain,
         recoveryAnswer: result.answer,
+        partnerDisplayName: partnerName.isNotEmpty ? partnerName : null,
+        startDate: rel.startDate,
       );
+
+      // Si el host aún no tenía nombre en su relación, lo escribimos
+      // (para que su propio perfil y el mapa lo muestren).
+      if (hostName.isEmpty) {
+        await ref
+            .read(relationshipProvider.notifier)
+            .setNameAt(0, result.displayName);
+      }
+
       if (mounted) {
         setState(() {
           _activeInvite = created.invite;
@@ -94,8 +111,6 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
       }
       ref.invalidate(groupSnapshotProvider);
 
-      // CLAVE: sin esto el host nunca abre el transporte ni escucha el
-      // buzón del QR (el SyncService arrancó "sin pareja").
       try {
         final sync = await ref.read(syncServiceProvider.future);
         await sync.reloadPeers();
@@ -130,32 +145,47 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     try {
       final invite = GroupInvitePayload.fromQrString(scanned);
 
-      final name = await showGeneralDialog<String>(
-        context: context,
-        barrierDismissible: true,
-        barrierLabel: 'Cerrar',
-        barrierColor: Colors.black.withValues(alpha: 0.4),
-        transitionDuration: const Duration(milliseconds: 300),
-        pageBuilder: (_, __, ___) => BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: const DisplayNameDialog(),
-        ),
-        transitionBuilder: (_, animation, __, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeInOutCubicEmphasized,
-            reverseCurve: Curves.easeInCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
-              child: child,
-            ),
-          );
-        },
-      );
-      if (name == null || !mounted) {
+      // Antes de preguntar el nombre, vemos si el QR ya lo trae.
+      final inviteService = ref.read(inviteServiceProvider);
+      final peek = await inviteService.peekRelationshipInfo(invite);
+      if (!mounted) return;
+
+      final presetName = peek.partnerName?.trim() ?? '';
+      String? chosenName;
+
+      if (presetName.isNotEmpty) {
+        // El host ya escribió el nombre del partner: no preguntamos.
+        chosenName = presetName;
+      } else {
+        // No hay nombre en el QR: preguntamos.
+        chosenName = await showGeneralDialog<String>(
+          context: context,
+          barrierDismissible: true,
+          barrierLabel: 'Cerrar',
+          barrierColor: Colors.black.withValues(alpha: 0.4),
+          transitionDuration: const Duration(milliseconds: 300),
+          pageBuilder: (_, __, ___) => BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: const DisplayNameDialog(),
+          ),
+          transitionBuilder: (_, animation, __, child) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeInOutCubicEmphasized,
+              reverseCurve: Curves.easeInCubic,
+            );
+            return FadeTransition(
+              opacity: curved,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
+                child: child,
+              ),
+            );
+          },
+        );
+      }
+
+      if (chosenName == null || chosenName.trim().isEmpty || !mounted) {
         setState(() => _busy = false);
         return;
       }
@@ -163,8 +193,11 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
       final linking = ref.read(linkingServiceProvider);
       final prepared = await linking.prepareJoin(
         invite: invite,
-        displayName: name,
+        displayName: chosenName,
       );
+
+      // Aplicamos nombres y fecha que vinieron en el QR.
+      await _applyRelationshipFromInvite(prepared);
 
       final sync = await ref.read(syncServiceProvider.future);
       final published = await sync.publishInvite(
@@ -182,8 +215,6 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
         return;
       }
 
-      // El invitado debe quedar escuchando su inbox para recibir el
-      // memberAccept (ya tiene el secreto del host desde prepareJoin).
       try {
         await sync.reloadPeers();
         unawaited(BackgroundSyncService.bootstrap());
@@ -209,8 +240,21 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     }
   }
 
+  /// Aplica nombres + fecha desde el QR. No-op si el QR no los traía.
+  Future<void> _applyRelationshipFromInvite(PrepareJoinResult prepared) async {
+    final hostName = prepared.hostDisplayName?.trim() ?? '';
+    final partnerName = prepared.partnerDisplayName?.trim() ?? '';
+    if (hostName.isEmpty && partnerName.isEmpty && prepared.startDate == null) {
+      return;
+    }
+    await ref.read(relationshipProvider.notifier).setFromSync(
+          partnerNames: [hostName, partnerName],
+          startDate: prepared.startDate,
+        );
+  }
+
   // ════════════════════════════════════════════════════════════════
-  // Mostrar QR
+  // Mostrar QR (regenerar)
   // ════════════════════════════════════════════════════════════════
 
   Future<void> _showQr() async {
@@ -234,6 +278,11 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     }
 
     try {
+      final rel = ref.read(relationshipProvider);
+      final names = rel.visibleNames;
+      final hostName = names.isNotEmpty ? names[0].trim() : '';
+      final partnerName = names.length > 1 ? names[1].trim() : '';
+
       final invite = await ref.read(inviteServiceProvider).createJoinInvite(
             groupId: snapshot.groupId!,
             hostDeviceId: my.deviceId,
@@ -241,10 +290,11 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
             transportConfig: transport,
             recoveryQuestionPlain: question.questionPlain,
             cartoKey: await ref.read(keyStoreProvider).getCartoKey(),
+            hostDisplayName: hostName.isNotEmpty ? hostName : null,
+            partnerDisplayName: partnerName.isNotEmpty ? partnerName : null,
+            startDateIso: rel.startDate?.toIso8601String(),
           );
 
-      // CLAVE: el host debe escuchar ESTE token. Sin esto, solo el QR
-      // del primer intento (el de createGroup) llegaba al host.
       await ref.read(keyStoreProvider).setActiveInviteToken(invite.inviteToken);
       try {
         final sync = await ref.read(syncServiceProvider.future);
@@ -309,17 +359,12 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
     );
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // build
-  // ════════════════════════════════════════════════════════════════
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final groupAsync = ref.watch(groupSnapshotProvider);
-    
-    // Escuchamos las solicitudes pendientes en tiempo real
+
     final pendingJoins = ref.watch(pendingJoinsProvider).values.toList()
       ..sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
 
@@ -398,10 +443,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
         if (!a.isHost && b.isHost) return 1;
         return a.joinedAt.compareTo(b.joinedAt);
       });
-    final approvedCount =
-        members.where((m) => m.approved).length;
-
-    // Si soy el host y hay solicitudes pendientes, las muestro arriba
+    final approvedCount = members.where((m) => m.approved).length;
     final showPendingSection = group.isHost && pendingJoins.isNotEmpty;
 
     return [
@@ -414,7 +456,7 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
         ],
         const SizedBox(height: 16),
       ],
-      
+
       BentoCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -424,9 +466,9 @@ class _LinkingScreenState extends ConsumerState<LinkingScreen> {
                 Expanded(
                   child: TonalMicroHeader(
                     icon: Icons.groups_rounded,
-                    title: group.isHost ? 'Configuraste este espacio' : 'Personas',
-                    description:
-                        'Lo que comparten viaja cifrado.',
+                    title:
+                        group.isHost ? 'Configuraste este espacio' : 'Personas',
+                    description: 'Lo que comparten viaja cifrado.',
                   ),
                 ),
                 const SizedBox(width: 8),
